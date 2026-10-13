@@ -2,12 +2,14 @@ package com.liuxingyu.liutrade;
 
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
+import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -54,6 +56,8 @@ final class TradeGui implements InventoryHolder {
     private final Player player;
     private final Merchant merchant;
     private final int page;
+    /** 占位玻璃板的标记，避免被当成玩家物品退回背包。 */
+    private final NamespacedKey fillerKey;
     private Inventory inventory;
     private int selected = -1;
     // 会话内缓存：CE 物品解析、产出预览只算一次（render 频繁发生时避免重复解析）。
@@ -66,6 +70,7 @@ final class TradeGui implements InventoryHolder {
         this.player = player;
         this.merchant = merchant;
         this.page = Math.max(0, Math.min(page, pageCount()));
+        this.fillerKey = new NamespacedKey(plugin, "gui_filler");
     }
 
     void open() {
@@ -127,27 +132,24 @@ final class TradeGui implements InventoryHolder {
     // ---------------- 渲染 ----------------
 
     void render() {
-        // 先清屏：活动输入槽保留玩家真实物品，其余先清空（隐藏输入槽里的东西退回玩家）
+        // 先清屏：活动输入槽保留玩家真实物品；隐藏输入槽盖占位玻璃板；其余清空
         for (int slot = 0; slot < 54; slot++) {
             if (isActiveInput(slot)) {
                 continue;
             }
             if (inputIndex(slot) >= 0) {
                 ItemStack stray = inventory.getItem(slot);
-                if (stray != null && !stray.getType().isAir()) {
+                if (stray != null && !stray.getType().isAir() && !isFiller(stray)) {
                     giveOrDrop(player, stray);
                 }
+                inventory.setItem(slot, filler());
+                continue;
             }
             inventory.setItem(slot, null);
         }
         // 玻璃板边框与分隔
         for (int slot : FILLER_SLOTS) {
             inventory.setItem(slot, filler());
-        }
-        // 用不到的输入槽也用玻璃板占位，保持整齐
-        int inputs = inputCount();
-        for (int i = inputs; i < INPUT_SLOTS.length; i++) {
-            inventory.setItem(INPUT_SLOTS[i], filler());
         }
         inventory.setItem(SLOT_HELP, help());
         inventory.setItem(SLOT_ARROW, button(Material.ARROW, "&7→ &f产出", null));
@@ -171,7 +173,22 @@ final class TradeGui implements InventoryHolder {
     }
 
     private ItemStack filler() {
-        return button(Material.BLACK_STAINED_GLASS_PANE, " ", null);
+        ItemStack item = button(Material.BLACK_STAINED_GLASS_PANE, " ", null);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.getPersistentDataContainer().set(fillerKey, PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    /** 是否为本插件的占位玻璃板（带 PDC 标记）。 */
+    private boolean isFiller(ItemStack item) {
+        if (item == null || item.getType() != Material.BLACK_STAINED_GLASS_PANE) {
+            return false;
+        }
+        ItemMeta meta = item.getItemMeta();
+        return meta != null && meta.getPersistentDataContainer().has(fillerKey, PersistentDataType.BYTE);
     }
 
     /** 顶部「怎么用」说明书（也带商店名与页码）。 */
@@ -430,11 +447,11 @@ final class TradeGui implements InventoryHolder {
         return result;
     }
 
-    /** 把输入槽里剩下的物品退回玩家背包（放不下则原地掉落）。 */
+    /** 把输入槽里剩下的物品退回玩家背包（放不下则原地掉落）；占位玻璃板不会退回。 */
     void returnInputs() {
         for (int slot : INPUT_SLOTS) {
             ItemStack item = inventory.getItem(slot);
-            if (item != null && !item.getType().isAir()) {
+            if (item != null && !item.getType().isAir() && !isFiller(item)) {
                 giveOrDrop(player, item.clone());
                 inventory.setItem(slot, null);
             }
