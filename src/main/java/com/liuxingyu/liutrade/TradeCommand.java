@@ -28,8 +28,9 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage(plugin.prefixed("no-permission"));
                 return true;
             }
-            plugin.reloadMerchants();
-            sender.sendMessage(plugin.prefixed("reloaded", "%count%", String.valueOf(plugin.manager().size())));
+            plugin.reloadAll();
+            sender.sendMessage(plugin.prefixed("reloaded", "%count%", String.valueOf(plugin.manager().size()))
+                    + Msg.color(" &7(界面模式：" + plugin.config().guiMode + ")"));
             return true;
         }
         if (args.length >= 1 && args[0].equalsIgnoreCase("list")) {

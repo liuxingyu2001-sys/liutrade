@@ -51,6 +51,7 @@ public final class LiuTrade extends JavaPlugin {
             command.setTabCompleter(executor);
         }
         new CitizensHook(this).register();
+        getLogger().info("界面模式：" + config.guiMode + ("custom".equals(config.guiMode) ? "（自定义箱子界面）" : "（原生村民界面）"));
         if (config.autoReload) {
             long period = config.pollIntervalTicks;
             Bukkit.getScheduler().runTaskTimer(this, this::poll, period, period);
@@ -92,17 +93,29 @@ public final class LiuTrade extends JavaPlugin {
         fingerprint = fingerprint();
     }
 
+    /** 重载 config.yml + 全部商店（/liutrade reload 与自动检测用）。 */
+    void reloadAll() {
+        reloadConfig();
+        config.load(getConfig());
+        reloadMerchants();
+    }
+
     private void poll() {
         long current = fingerprint();
         if (current != fingerprint) {
             fingerprint = current;
-            manager.load(merchantsRoot());
-            getLogger().info("检测到交易配置变化，已自动重载 " + manager.size() + " 个商店。");
+            reloadAll();
+            getLogger().info("检测到配置变化，已自动重载（界面模式：" + config.guiMode
+                    + "，商店 " + manager.size() + " 个）。");
         }
     }
 
     private long fingerprint() {
         long sum = 0;
+        File configFile = new File(getDataFolder(), "config.yml");
+        if (configFile.isFile()) {
+            sum = configFile.lastModified() * 131 + configFile.length();
+        }
         for (File file : yamlFiles(merchantsRoot())) {
             sum = sum * 31 + file.lastModified() * 131 + file.length();
         }
