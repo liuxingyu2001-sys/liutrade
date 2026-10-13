@@ -2,8 +2,11 @@ package com.liuxingyu.liutrade;
 
 import java.util.List;
 
-/** 一笔交易：1~2 个输入 → 1 个产出（显式或经 SoulSpace 转换）。 */
+/** 一笔交易：1~N 个输入（自定义界面最多 {@link #MAX_INPUTS}）→ 1 个或多个产出。 */
 final class Trade {
+
+    /** 自定义界面一屏输入槽上限（原生村民界面只能 2 个）。 */
+    static final int MAX_INPUTS = 7;
 
     final String id;
     String name;

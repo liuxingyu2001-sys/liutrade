@@ -39,7 +39,7 @@ final class TradeListener implements Listener {
             return;
         }
         int slot = event.getRawSlot();
-        if (TradeGui.isInput(slot)) {
+        if (gui.isActiveInput(slot)) {
             plugin.getServer().getScheduler().runTask(plugin, gui::render);
             return;
         }
@@ -69,7 +69,7 @@ final class TradeListener implements Listener {
             return;
         }
         for (int slot : event.getRawSlots()) {
-            if (slot < 54 && !TradeGui.isInput(slot)) {
+            if (slot < 54 && !gui.isActiveInput(slot)) {
                 event.setCancelled(true);
                 return;
             }
@@ -86,8 +86,9 @@ final class TradeListener implements Listener {
             return;
         }
         if ("void".equalsIgnoreCase(plugin.config().leftoverOnClose)) {
-            gui.getInventory().setItem(TradeGui.SLOT_IN1, null);
-            gui.getInventory().setItem(TradeGui.SLOT_IN2, null);
+            for (int slot : TradeGui.INPUT_SLOTS) {
+                gui.getInventory().setItem(slot, null);
+            }
         } else {
             gui.returnInputs();
         }

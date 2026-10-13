@@ -24,7 +24,7 @@
 #        display_name: "&6神秘票券"           # 界面里显示的名字（不写则自动取中文名）
 #   amount 默认 1。
 #
-# 每笔交易 = 1~2 个输入 → 1 个产出：
+# 每笔交易 = 1~7 个输入 → 1 个或多个产出（原生村民界面每笔最多 2 个输入）：
 #   · convert: true  —— 产出由 SoulSpace 的 convert/ 转换规则决定（仅限单输入）
 #   · outputs       —— 显式列出产出
 name: "&6铁匠"
@@ -88,3 +88,13 @@ trades:
     outputs:
       - material: GOLD_INGOT
         amount: 2
+  三材料:
+    name: "&f钻石+金锭+绿宝石 &7→ &b下界合金锭"
+    inputs:
+      - material: DIAMOND
+      - material: GOLD_INGOT
+        amount: 2
+      - material: EMERALD
+        amount: 4
+    outputs:
+      - material: NETHERITE_INGOT

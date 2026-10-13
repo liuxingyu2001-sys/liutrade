@@ -117,8 +117,8 @@ final class MerchantManager {
                 outputs.add(spec);
             }
         }
-        if (inputs.isEmpty() || inputs.size() > 2) {
-            warn("交易 " + id + " 的 inputs 必须为 1~2 项，已跳过。");
+        if (inputs.isEmpty() || inputs.size() > Trade.MAX_INPUTS) {
+            warn("交易 " + id + " 的 inputs 必须为 1~" + Trade.MAX_INPUTS + " 项，已跳过。");
             return null;
         }
         boolean convert = booleanValue(section.get("convert"), outputs.isEmpty());

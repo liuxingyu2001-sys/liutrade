@@ -53,7 +53,7 @@ final class TradeService {
         Inventory inventory = gui.getInventory();
         List<ItemStack> outputs = new ArrayList<>();
         for (int i = 0; i < times; i++) {
-            ItemStack subject = inventory.getItem(TradeGui.SLOT_IN1);
+            ItemStack subject = inventory.getItem(TradeGui.inputSlot(0));
             List<ItemStack> produced = produceAll(player, trade, subject);
             if (produced.isEmpty()) {
                 player.sendMessage(plugin.prefixed(trade.convert ? "soulspace-missing" : "trade-fail"));
@@ -62,7 +62,7 @@ final class TradeService {
             outputs.addAll(produced);
         }
         for (int i = 0; i < trade.inputs.size(); i++) {
-            int slot = i == 0 ? TradeGui.SLOT_IN1 : TradeGui.SLOT_IN2;
+            int slot = TradeGui.inputSlot(i);
             ItemStack item = inventory.getItem(slot);
             int remaining = item.getAmount() - trade.inputs.get(i).amount * times;
             if (remaining <= 0) {

@@ -10,30 +10,35 @@ import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
 /**
- * 村民式交易界面（54 格）：
+ * 自定义交易界面（54 格），布局尽量直白：
  * <pre>
- *   左 5 列 x 5 行 = 交易列表（每页 25 笔，点击自动放入所需物品）
- *   右侧  23 = 输入1，24 = 输入2，25 = 产出（点击完成交易）
- *   底行  45 = 上一页，49 = 关闭，53 = 下一页
+ *   第 1 行：[商店图标] [怎么用]
+ *   第 2~4 行：交易列表（9 列 x 3 行 = 每页 27 笔，左键自动放入所需物品）
+ *   第 5 行：[输入1][输入2][输入3]...  → [产出]   （输入数量按商店实际需要显示，最多 7 个）
+ *   第 6 行：[上一页]        [关闭]        [下一页]
  * </pre>
- * 输入槽为真实槽位：玩家放置的物品就放在这里，产出槽实时显示能换到什么。
+ * 输入槽是真实槽位：玩家把物品放进去，产出槽实时显示能换到什么，点产出槽完成交易。
  */
 final class TradeGui implements InventoryHolder {
 
+    /** 交易列表：第 2~4 行（9 列 x 3 行 = 27）。 */
     static final int[] TRADE_SLOTS = {
-            0, 1, 2, 3, 4,
-            9, 10, 11, 12, 13,
-            18, 19, 20, 21, 22,
-            27, 28, 29, 30, 31,
-            36, 37, 38, 39, 40
+            9, 10, 11, 12, 13, 14, 15, 16, 17,
+            18, 19, 20, 21, 22, 23, 24, 25, 26,
+            27, 28, 29, 30, 31, 32, 33, 34, 35
     };
-    static final int SLOT_IN1 = 23;
-    static final int SLOT_IN2 = 24;
-    static final int SLOT_OUT = 25;
+    /** 输入槽：第 5 行左侧（最多 {@link Trade#MAX_INPUTS} 个，按商店实际需要显示）。 */
+    static final int[] INPUT_SLOTS = {36, 37, 38, 39, 40, 41, 42};
+    static final int SLOT_ICON = 0;
+    static final int SLOT_HELP = 4;
+    static final int SLOT_ARROW = 43;
+    static final int SLOT_OUT = 44;
     static final int SLOT_PREV = 45;
     static final int SLOT_CLOSE = 49;
     static final int SLOT_NEXT = 53;
@@ -45,9 +50,9 @@ final class TradeGui implements InventoryHolder {
     private Inventory inventory;
     private int selected = -1;
     // 会话内缓存：CE 物品解析、产出预览只算一次（render 频繁发生时避免重复解析）。
-    private final Map<Integer, ItemStack> iconCache = new java.util.HashMap<>();
-    private final Map<Integer, List<ItemStack>> previewCache = new java.util.HashMap<>();
-    private final Map<ItemSpec, String> specNameCache = new java.util.IdentityHashMap<>();
+    private final Map<Integer, ItemStack> iconCache = new HashMap<>();
+    private final Map<Integer, List<ItemStack>> previewCache = new HashMap<>();
+    private final Map<ItemSpec, String> specNameCache = new IdentityHashMap<>();
 
     TradeGui(LiuTrade plugin, Player player, Merchant merchant, int page) {
         this.plugin = plugin;
@@ -58,16 +63,8 @@ final class TradeGui implements InventoryHolder {
 
     void open() {
         this.inventory = Bukkit.createInventory(this, 54, Msg.color(merchant.displayTitle()));
-        int start = page * TRADE_SLOTS.length;
-        for (int i = 0; i < TRADE_SLOTS.length; i++) {
-            int index = start + i;
-            if (index >= merchant.trades.size()) {
-                break;
-            }
-            inventory.setItem(TRADE_SLOTS[i], tradeIcon(merchant.trades.get(index), index));
-        }
-        player.openInventory(inventory);
         render();
+        player.openInventory(inventory);
     }
 
     @Override
@@ -92,85 +89,149 @@ final class TradeGui implements InventoryHolder {
         return Math.max(1, Math.min(pages, plugin.config().maxPages));
     }
 
+    /** 本商店一笔交易最多要几种物品（决定显示几个输入槽）。 */
+    int inputCount() {
+        int max = 1;
+        for (Trade trade : merchant.trades) {
+            max = Math.max(max, trade.inputs.size());
+        }
+        return Math.min(max, INPUT_SLOTS.length);
+    }
+
+    static int inputSlot(int index) {
+        return INPUT_SLOTS[Math.max(0, Math.min(index, INPUT_SLOTS.length - 1))];
+    }
+
+    static int inputIndex(int slot) {
+        for (int i = 0; i < INPUT_SLOTS.length; i++) {
+            if (INPUT_SLOTS[i] == slot) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** 当前显示出来的输入槽（超出本商店需要的不算）。 */
+    boolean isActiveInput(int slot) {
+        int index = inputIndex(slot);
+        return index >= 0 && index < inputCount();
+    }
+
     // ---------------- 渲染 ----------------
 
     void render() {
-        ItemStack filler = filler();
+        // 整屏重画（活动输入槽除外，里面是玩家真实物品）
         for (int slot = 0; slot < 54; slot++) {
-            if (isInput(slot) || slot == SLOT_OUT || isTradeSlot(slot)
-                    || slot == SLOT_PREV || slot == SLOT_NEXT || slot == SLOT_CLOSE) {
+            if (isActiveInput(slot)) {
                 continue;
             }
-            inventory.setItem(slot, filler);
+            int hidden = inputIndex(slot);
+            if (hidden >= 0) {
+                // 本商店不需要的输入槽：里面的东西退回玩家
+                ItemStack stray = inventory.getItem(slot);
+                if (stray != null && !stray.getType().isAir()) {
+                    giveOrDrop(player, stray);
+                }
+            }
+            inventory.setItem(slot, null);
         }
-        // 交易按钮（当前页之外的用填充物盖掉）
+        inventory.setItem(SLOT_ICON, shopIcon());
+        inventory.setItem(SLOT_HELP, help());
+        inventory.setItem(SLOT_ARROW, button(Material.ARROW, "&7→ &f产出", null));
+        inventory.setItem(SLOT_OUT, outputIcon());
+        inventory.setItem(SLOT_PREV, page > 0
+                ? button(Material.SPECTRAL_ARROW, "&e上一页", List.of("&7第 " + (page + 1) + " / " + pageCount() + " 页"))
+                : null);
+        inventory.setItem(SLOT_NEXT, page < pageCount() - 1
+                ? button(Material.SPECTRAL_ARROW, "&e下一页", List.of("&7第 " + (page + 2) + " / " + pageCount() + " 页"))
+                : null);
+        inventory.setItem(SLOT_CLOSE, button(Material.BARRIER, "&c关闭", List.of("&7点击关闭界面")));
+
         int start = page * TRADE_SLOTS.length;
         for (int i = 0; i < TRADE_SLOTS.length; i++) {
             int index = start + i;
-            inventory.setItem(TRADE_SLOTS[i], index < merchant.trades.size()
-                    ? tradeIcon(merchant.trades.get(index), index)
-                    : filler);
-        }
-        inventory.setItem(SLOT_PREV, page > 0
-                ? button(Material.SPECTRAL_ARROW, "&e上一页", "&7第 " + page + " / " + pageCount() + " 页")
-                : null);
-        inventory.setItem(SLOT_NEXT, page < pageCount() - 1
-                ? button(Material.SPECTRAL_ARROW, "&e下一页", "&7第 " + (page + 2) + " / " + pageCount() + " 页")
-                : null);
-        inventory.setItem(SLOT_CLOSE, button(Material.BARRIER, "&c关闭", "&7点击关闭界面"));
-        inventory.setItem(SLOT_OUT, outputIcon());
-    }
-
-    /** 当前要展示/执行的交易：选中优先，否则取第一个可完成的。 */
-    Trade currentTrade() {
-        if (selected >= 0 && selected < merchant.trades.size()) {
-            return merchant.trades.get(selected);
-        }
-        for (Trade trade : merchant.trades) {
-            if (batches(trade) > 0) {
-                return trade;
+            if (index >= merchant.trades.size()) {
+                break;
             }
+            inventory.setItem(TRADE_SLOTS[i], tradeIcon(merchant.trades.get(index), index));
         }
-        return null;
     }
 
+    /** 顶部左侧的商店标识。 */
+    private ItemStack shopIcon() {
+        ItemStack sample = merchant.icon == null ? null : merchant.icon.iconSample(plugin.soulSpace());
+        ItemStack item = sample != null ? sample.clone() : new ItemStack(Material.EMERALD);
+        item.setAmount(1);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Msg.color("&6" + merchant.displayName()));
+            meta.setLore(List.of(
+                    Msg.color("&7共 &f" + merchant.trades.size() + " &7种交易"),
+                    Msg.color("&7第 &f" + (page + 1) + " &7/ &f" + pageCount() + " &7页")));
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    /** 顶部「怎么用」说明书。 */
+    private ItemStack help() {
+        ItemStack item = new ItemStack(Material.BOOK);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Msg.color("&e&l怎么用"));
+            meta.setLore(List.of(
+                    Msg.color("&7① &f左键 &7下方任意交易：自动放入所需物品"),
+                    Msg.color("&7② 也可以自己把物品放进下面一行的输入槽"),
+                    Msg.color("&7③ 右侧 &f产出格 &7出现物品后，&f左键 &7即可交易"),
+                    Msg.color("&7④ &fShift+左键 &7产出格：一次交易全部"),
+                    Msg.color("&7⑤ 下方 &f箭头 &7翻页")));
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    /** 产出格：没放物品/没配好时给出清楚提示，配好时显示能换到什么。 */
     private ItemStack outputIcon() {
+        boolean empty = inputsEmpty();
         Trade trade = currentTrade();
         if (trade == null) {
-            boolean empty = isEmpty(SLOT_IN1) && isEmpty(SLOT_IN2);
-            return button(empty ? Material.BOOK : Material.BARRIER,
-                    empty ? "&e请放入交易物品" : "&c没有匹配的交易",
-                    empty ? "&7把物品放入左侧两个输入槽" : "&7左键点击列表中的交易可自动放入");
+            if (empty) {
+                return button(Material.GRAY_STAINED_GLASS_PANE, "&7产出",
+                        List.of(Msg.color("&7把物品放进左边一行的输入槽"),
+                                Msg.color("&7或左键下方交易自动放入")));
+            }
+            return button(Material.BARRIER, "&c没有匹配的交易",
+                    List.of(Msg.color("&7这些物品换不到东西"),
+                            Msg.color("&7请对照下方交易的需求")));
         }
         int batches = batches(trade);
-        if (batches <= 0) {
-            return button(Material.BARRIER, "&c无法完成交易", "&7物品数量不足");
-        }
         List<ItemStack> previews = previews(trade);
         if (previews.isEmpty()) {
-            return button(Material.BARRIER, "&c无法完成交易", "&7物品数量不足，或转换规则未命中");
+            return button(Material.BARRIER, "&c无法完成交易",
+                    List.of(Msg.color("&7物品数量不足，或转换规则未命中")));
         }
-        ItemStack result = previews.get(0);
+        ItemStack result = previews.get(0).clone();
         ItemMeta meta = result.getItemMeta();
         if (meta != null) {
-            List<String> lore = meta.hasLore() && meta.getLore() != null ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+            List<String> lore = new ArrayList<>();
+            lore.add(Msg.color("&7需要："));
+            for (ItemSpec input : trade.inputs) {
+                lore.add(Msg.color("  &8· &f" + specName(input) + " &7x" + input.amount));
+            }
             for (int i = 1; i < previews.size(); i++) {
                 ItemStack extra = previews.get(i);
-                lore.add(Msg.color("&7额外产出：&f" + plugin.itemName(extra) + " &7x" + extra.getAmount()));
+                lore.add(Msg.color("&7额外产出 &f" + plugin.itemName(extra) + " &7x" + extra.getAmount()));
             }
             lore.add("");
-            lore.add(Msg.color("&e左键交易 1 次"));
-            if (batches > 1) {
-                lore.add(Msg.color("&eShift+左键交易全部 &7(" + batches + " 次)"));
-            } else {
-                lore.add(Msg.color("&7当前可交易 " + batches + " 次"));
-            }
+            lore.add(Msg.color("&a左键 &7：交易 1 次"));
+            lore.add(Msg.color("&aShift+左键 &7：全部 &f" + batches + " &7次"));
             meta.setLore(lore);
             result.setItemMeta(meta);
         }
         return result;
     }
 
+    /** 交易列表里的一笔交易。 */
     private ItemStack tradeIcon(Trade trade, int index) {
         ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
         ItemStack icon = baseIcon(trade, index).clone();
@@ -186,30 +247,26 @@ final class TradeGui implements InventoryHolder {
         if (!trade.description.isEmpty()) {
             lore.add("");
         }
-        if (trade.inputs.size() > 1) {
-            lore.add(Msg.color("&7需求（全部）："));
-        } else {
-            lore.add(Msg.color("&7需求："));
-        }
+        lore.add(Msg.color("&7需要："));
         for (ItemSpec input : trade.inputs) {
-            lore.add(Msg.color("  &8- &f" + specName(input) + " &7x" + input.amount));
+            lore.add(Msg.color("  &8· &f" + specName(input) + " &7x" + input.amount));
         }
-        lore.add(Msg.color("&7产出："));
+        lore.add(Msg.color("&7获得："));
         List<ItemStack> previews = previews(trade);
-        if (!previews.isEmpty()) {
+        if (previews.isEmpty()) {
+            lore.add(Msg.color("  &8· &c" + (trade.convert ? "转换规则未命中" : "无法解析")));
+        } else {
             for (ItemStack pv : previews) {
-                lore.add(Msg.color("  &8- &f" + plugin.itemName(pv) + " &7x" + pv.getAmount()
+                lore.add(Msg.color("  &8· &f" + plugin.itemName(pv) + " &7x" + pv.getAmount()
                         + (trade.convert ? " &8(转换)" : "")));
             }
-        } else {
-            lore.add(Msg.color("  &8- &c" + (trade.convert ? "转换规则未命中" : "无法解析")));
         }
-        lore.add("");
         int batches = batches(trade);
-        lore.add(Msg.color(batches > 0 ? "&7当前可交易 &f" + batches + " &7次" : "&c物品不足，无法交易"));
+        lore.add("");
+        lore.add(Msg.color(batches > 0 ? "&7你当前可交易 &a" + batches + " &7次" : "&c物品不足"));
         lore.add(Msg.color("&e左键：自动放入所需物品"));
         if (first != null && !first.nativeRepresentable()) {
-            lore.add(Msg.color("&8按规则匹配（需自定义界面）"));
+            lore.add(Msg.color("&8（按规则匹配）"));
         }
         meta.setLore(lore);
         if (index == selected) {
@@ -259,47 +316,57 @@ final class TradeGui implements InventoryHolder {
         return name;
     }
 
-    private ItemStack filler() {
-        return button(Material.GRAY_STAINED_GLASS_PANE, " ", null);
-    }
-
-    private static ItemStack button(Material material, String name, String lore) {
+    private static ItemStack button(Material material, String name, List<String> lore) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             meta.setDisplayName(Msg.color(name));
-            if (lore != null) {
-                meta.setLore(List.of(Msg.color(lore)));
+            if (lore != null && !lore.isEmpty()) {
+                meta.setLore(lore);
             }
             item.setItemMeta(meta);
         }
         return item;
     }
 
-    // ---------------- 输入/匹配 ----------------
+    // ---------------- 选中与匹配 ----------------
+
+    /** 当前要展示/执行的交易：优先选中的（且输入满足），否则第一个输入满足的。 */
+    Trade currentTrade() {
+        if (selected >= 0 && selected < merchant.trades.size()
+                && batches(merchant.trades.get(selected)) > 0) {
+            return merchant.trades.get(selected);
+        }
+        for (Trade trade : merchant.trades) {
+            if (batches(trade) > 0) {
+                return trade;
+            }
+        }
+        return null;
+    }
 
     /** 当前输入槽能满足该交易的份数（0 = 不匹配）。 */
     int batches(Trade trade) {
-        ItemStack in1 = inventory.getItem(SLOT_IN1);
-        ItemStack in2 = inventory.getItem(SLOT_IN2);
-        ItemStack[] slots = {in1, in2};
         int batches = Integer.MAX_VALUE;
-        for (int i = 0; i < 2; i++) {
-            ItemSpec spec = i < trade.inputs.size() ? trade.inputs.get(i) : null;
-            ItemStack item = slots[i];
-            boolean present = item != null && !item.getType().isAir();
-            if (spec == null) {
-                if (present) {
-                    return 0;
-                }
-                continue;
-            }
-            if (!present || !spec.matches(item, plugin.soulSpace())) {
+        for (int i = 0; i < trade.inputs.size(); i++) {
+            ItemStack item = inventory.getItem(inputSlot(i));
+            if (item == null || item.getType().isAir()
+                    || !trade.inputs.get(i).matches(item, plugin.soulSpace())) {
                 return 0;
             }
-            batches = Math.min(batches, item.getAmount() / spec.amount);
+            batches = Math.min(batches, item.getAmount() / trade.inputs.get(i).amount);
         }
         return batches == Integer.MAX_VALUE ? 0 : batches;
+    }
+
+    private boolean inputsEmpty() {
+        for (int i = 0; i < inputCount(); i++) {
+            ItemStack item = inventory.getItem(inputSlot(i));
+            if (item != null && !item.getType().isAir()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** 从玩家背包取出该交易一批所需物品，放入输入槽。 */
@@ -309,7 +376,7 @@ final class TradeGui implements InventoryHolder {
             ItemSpec spec = trade.inputs.get(i);
             ItemStack taken = takeFromPlayer(spec, spec.amount);
             if (taken != null) {
-                inventory.setItem(i == 0 ? SLOT_IN1 : SLOT_IN2, taken);
+                inventory.setItem(inputSlot(i), taken);
             }
         }
         selected = merchant.trades.indexOf(trade);
@@ -344,7 +411,7 @@ final class TradeGui implements InventoryHolder {
 
     /** 把输入槽里剩下的物品退回玩家背包（放不下则原地掉落）。 */
     void returnInputs() {
-        for (int slot : new int[]{SLOT_IN1, SLOT_IN2}) {
+        for (int slot : INPUT_SLOTS) {
             ItemStack item = inventory.getItem(slot);
             if (item != null && !item.getType().isAir()) {
                 giveOrDrop(player, item.clone());
@@ -358,15 +425,6 @@ final class TradeGui implements InventoryHolder {
         for (ItemStack drop : leftover.values()) {
             player.getWorld().dropItemNaturally(player.getLocation(), drop);
         }
-    }
-
-    private boolean isEmpty(int slot) {
-        ItemStack item = inventory.getItem(slot);
-        return item == null || item.getType().isAir();
-    }
-
-    static boolean isInput(int slot) {
-        return slot == SLOT_IN1 || slot == SLOT_IN2;
     }
 
     static boolean isTradeSlot(int slot) {

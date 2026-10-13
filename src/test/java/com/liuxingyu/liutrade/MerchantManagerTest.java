@@ -129,4 +129,31 @@ class MerchantManagerTest {
         assertEquals("ce:ns:ticket", trade.inputs.get(0).display.libraryId);
         assertEquals("&6票券", trade.inputs.get(0).configuredName());
     }
+
+    @Test
+    void parsesThreeOrMoreInputs() throws Exception {
+        Merchant merchant = parse("""
+                name: "店"
+                trades:
+                  三输入:
+                    inputs:
+                      - material: DIAMOND
+                      - material: GOLD_INGOT
+                      - material: EMERALD
+                    outputs:
+                      - material: NETHERITE_INGOT
+                """);
+        assertNotNull(merchant);
+        assertEquals(3, merchant.trades.get(0).inputs.size());
+    }
+
+    @Test
+    void rejectsTooManyInputs() throws Exception {
+        StringBuilder yaml = new StringBuilder("name: \"店\"\ntrades:\n  太多:\n    inputs:\n");
+        for (int i = 0; i < Trade.MAX_INPUTS + 1; i++) {
+            yaml.append("      - material: STONE\n");
+        }
+        yaml.append("    outputs:\n      - material: DIRT\n");
+        assertNull(parse(yaml.toString()));
+    }
 }

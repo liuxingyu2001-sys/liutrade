@@ -59,7 +59,7 @@ trades:
     description:               # 可选：界面 lore 里名字下方的自定义说明
       - "&7把铁锭换成金锭"
       - "&8每日限 1 次"
-    inputs:                   # 1~2 个输入
+    inputs:                   # 1~7 个输入（原生村民界面每笔最多 2 个）
       - material: IRON_INGOT
         amount: 8
     convert: true             # 产出走 SoulSpace 转换规则（仅限单输入）
@@ -82,6 +82,10 @@ trades:
       - material: CLOCK
         amount: 1
 ```
+
+自定义界面布局（`gui-mode: custom`）：第 2~4 行是交易列表（每页 27 笔），第 5 行是
+`[输入1][输入2]… → [产出]`——输入槽数量按本商店需要几个物品**动态显示**（最多 7 个），
+顶部有「怎么用」说明书；左键交易可自动放入，也支持手动放。
 
 ### 物品规格
 

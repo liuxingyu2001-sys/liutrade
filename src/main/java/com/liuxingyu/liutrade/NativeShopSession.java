@@ -55,6 +55,12 @@ final class NativeShopSession {
     }
 
     private MerchantRecipe build(Trade trade) {
+        if (trade.inputs.size() > 2) {
+            plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name
+                    + "」有 " + trade.inputs.size() + " 个输入，原生村民界面最多 2 个，已跳过"
+                    + "（可改用 settings.gui-mode: custom）。");
+            return null;
+        }
         ItemStack result = plugin.service().preview(player, trade);
         if (result == null || result.getType().isAir()) {
             plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name

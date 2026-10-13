@@ -65,8 +65,9 @@ public final class LiuTrade extends JavaPlugin {
             if (gui.player().isOnline()) {
                 gui.returnInputs();
             } else {
-                gui.getInventory().setItem(TradeGui.SLOT_IN1, null);
-                gui.getInventory().setItem(TradeGui.SLOT_IN2, null);
+                for (int slot : TradeGui.INPUT_SLOTS) {
+                    gui.getInventory().setItem(slot, null);
+                }
             }
         }
         open.clear();
