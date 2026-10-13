@@ -27,13 +27,16 @@
 | 命令 | 说明 |
 | --- | --- |
 | `/liutrade` | 打开商店（只有一个时直接打开，多个时列出） |
-| `/liutrade open <商店>` | 打开指定商店（`<商店>` = 文件相对路径，去掉 `.yml`） |
-| `/liutrade list` | 列出全部商店 |
-| `/liutrade reload` | 重载全部商店配置 |
+| `/liutrade open <商店> [玩家]` | 打开指定商店；`[玩家]` = 为某玩家打开（控制台必须指定，玩家为他人打开需 `liutrade.admin`） |
+| `/liutrade list` | 列出全部商店（控制台可用） |
+| `/liutrade reload` | 重载全部商店配置（控制台可用） |
+
+`<商店>` = 文件相对路径去掉 `.yml`（例如 `blacksmith`、`子目录/xxx`）。
 
 | 权限 | 默认 | 说明 |
 | --- | --- | --- |
 | `liutrade.use` | true | 打开交易商店 |
+| `liutrade.admin` | op | 为其他玩家打开商店 |
 | `liutrade.admin.reload` | op | 重载配置 |
 
 单笔交易还可在 YAML 里写 `permission:` 限制。
