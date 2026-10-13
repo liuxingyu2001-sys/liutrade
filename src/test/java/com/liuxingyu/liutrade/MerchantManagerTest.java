@@ -156,4 +156,27 @@ class MerchantManagerTest {
         yaml.append("    outputs:\n      - material: DIRT\n");
         assertNull(parse(yaml.toString()));
     }
+
+    @Test
+    void parsesTradeLevelDisplayAndDisplayName() throws Exception {
+        Merchant merchant = parse("""
+                name: "店"
+                trades:
+                  甲:
+                    name: "原始名"
+                    display_name: "&6图标名"
+                    display:
+                      library_id: "ce:ns:icon"
+                    inputs:
+                      - material: DIAMOND
+                    outputs:
+                      - material: GOLD_INGOT
+                """);
+        assertNotNull(merchant);
+        Trade trade = merchant.trades.get(0);
+        assertEquals("原始名", trade.name);
+        assertEquals("&6图标名", trade.displayName);
+        assertNotNull(trade.display);
+        assertEquals("ce:ns:icon", trade.display.libraryId);
+    }
 }

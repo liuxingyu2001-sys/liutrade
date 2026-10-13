@@ -9,7 +9,12 @@ final class Trade {
     static final int MAX_INPUTS = 6;
 
     final String id;
+    /** 交易名（聊天提示/默认图标名）。 */
     String name;
+    /** 仅用于交易列表图标的名字（为空则用 {@link #name}）。 */
+    String displayName;
+    /** 仅用于交易列表图标的物品（为空则用输入[0]的显示样品）。 */
+    ItemSpec display;
     /** 界面 lore 里自定义的说明文字（在名字下方）。 */
     List<String> description = java.util.Collections.emptyList();
     List<ItemSpec> inputs;

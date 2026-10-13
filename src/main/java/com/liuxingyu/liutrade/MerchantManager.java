@@ -135,6 +135,13 @@ final class MerchantManager {
         trade.outputs = outputs.isEmpty() ? null : Collections.unmodifiableList(outputs);
         trade.convert = convert;
         trade.description = stringList(section.get("description"));
+        trade.display = spec(section.get("display"));
+        Object displayName = section.get("display_name");
+        if (displayName == null) {
+            displayName = section.get("label");
+        }
+        trade.displayName = displayName != null && !String.valueOf(displayName).isBlank()
+                ? String.valueOf(displayName) : null;
         Object name = section.get("name");
         trade.name = name != null ? String.valueOf(name) : inputs.get(0).label();
         Object permission = section.get("permission");

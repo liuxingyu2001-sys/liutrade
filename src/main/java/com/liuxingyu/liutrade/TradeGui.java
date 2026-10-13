@@ -38,19 +38,20 @@ final class TradeGui implements InventoryHolder {
     static final int[] INPUT_SLOTS = {37, 39, 41, 43, 46, 48};
     /** 玻璃板边框/分隔。 */
     private static final int[] FILLER_SLOTS = {
-            0, 2, 4, 6, 8,
+            0, 2, 3, 5, 6, 8,
             9, 11, 13, 15, 17,
             18, 20, 22, 24, 26,
             27, 29, 31, 33, 35,
             36, 38, 40, 42, 44,
-            45, 47, 49, 51, 53
+            45, 47, 49, 51
     };
     static final int SLOT_PREV = 1;
-    static final int SLOT_CLOSE = 3;
-    static final int SLOT_HELP = 5;
+    static final int SLOT_HELP = 4;
     static final int SLOT_NEXT = 7;
     static final int SLOT_ARROW = 50;
     static final int SLOT_OUT = 52;
+    /** 关闭按钮放在最后一个槽位。 */
+    static final int SLOT_CLOSE = 53;
 
     private final LiuTrade plugin;
     private final Player player;
@@ -156,24 +157,23 @@ final class TradeGui implements InventoryHolder {
         inventory.setItem(SLOT_OUT, outputIcon());
         inventory.setItem(SLOT_PREV, page > 0
                 ? button(Material.SPECTRAL_ARROW, "&e上一页", List.of("&7第 " + (page + 1) + " / " + pageCount() + " 页"))
-                : null);
+                : filler());
         inventory.setItem(SLOT_NEXT, page < pageCount() - 1
                 ? button(Material.SPECTRAL_ARROW, "&e下一页", List.of("&7第 " + (page + 2) + " / " + pageCount() + " 页"))
-                : null);
+                : filler());
         inventory.setItem(SLOT_CLOSE, button(Material.BARRIER, "&c关闭", List.of("&7点击关闭界面")));
 
         int start = page * TRADE_SLOTS.length;
         for (int i = 0; i < TRADE_SLOTS.length; i++) {
             int index = start + i;
-            if (index >= merchant.trades.size()) {
-                break;
-            }
-            inventory.setItem(TRADE_SLOTS[i], tradeIcon(merchant.trades.get(index), index));
+            inventory.setItem(TRADE_SLOTS[i], index < merchant.trades.size()
+                    ? tradeIcon(merchant.trades.get(index), index)
+                    : filler());
         }
     }
 
     private ItemStack filler() {
-        ItemStack item = button(Material.BLACK_STAINED_GLASS_PANE, " ", null);
+        ItemStack item = button(Material.GRAY_STAINED_GLASS_PANE, " ", null);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             meta.getPersistentDataContainer().set(fillerKey, PersistentDataType.BYTE, (byte) 1);
@@ -184,7 +184,7 @@ final class TradeGui implements InventoryHolder {
 
     /** 是否为本插件的占位玻璃板（带 PDC 标记）。 */
     private boolean isFiller(ItemStack item) {
-        if (item == null || item.getType() != Material.BLACK_STAINED_GLASS_PANE) {
+        if (item == null || item.getType() != Material.GRAY_STAINED_GLASS_PANE) {
             return false;
         }
         ItemMeta meta = item.getItemMeta();
@@ -258,7 +258,7 @@ final class TradeGui implements InventoryHolder {
         if (meta == null) {
             return icon;
         }
-        meta.setDisplayName(Msg.color("&f" + trade.name));
+        meta.setDisplayName(Msg.color("&f" + (trade.displayName != null ? trade.displayName : trade.name)));
         List<String> lore = new ArrayList<>();
         for (String line : trade.description) {
             lore.add(Msg.color(line));
@@ -295,14 +295,17 @@ final class TradeGui implements InventoryHolder {
         return icon;
     }
 
-    /** 交易列表图标底物（缓存）：输入[0]的显示样品 → 商店图标 → 箱子。 */
+    /** 交易列表图标底物（缓存）：交易自定义 display → 输入[0]的显示样品 → 商店图标 → 箱子。 */
     private ItemStack baseIcon(Trade trade, int index) {
         ItemStack cached = iconCache.get(index);
         if (cached != null) {
             return cached;
         }
-        ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
-        ItemStack sample = first == null ? null : first.iconSample(plugin.soulSpace());
+        ItemStack sample = trade.display == null ? null : trade.display.iconSample(plugin.soulSpace());
+        if (sample == null) {
+            ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
+            sample = first == null ? null : first.iconSample(plugin.soulSpace());
+        }
         if (sample == null && merchant.icon != null) {
             sample = merchant.icon.iconSample(plugin.soulSpace());
         }

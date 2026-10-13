@@ -35,7 +35,10 @@ icon:              # 商店图标
   library_id: "mc:ANVIL"
 trades:
   铁换金:
-    name: "&f铁锭 &7→ &6金锭"
+    name: "&f铁锭 &7→ &6金锭"          # 交易名（聊天提示 + 默认图标名）
+    display_name: "&6金锭兑换"          # 仅图标显示的名字（不写则用 name）
+    display:                            # 仅图标显示的物品（不写则用输入[0]）
+      library_id: "mc:GOLD_INGOT"
     description:
       - "&7把铁锭换成金锭"
     inputs:

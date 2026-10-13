@@ -55,7 +55,10 @@ icon:                         # 商店图标
   library_id: "mc:ANVIL"
 trades:
   铁换金:                      # 交易键（仅作标识）
-    name: "&f铁锭 &7→ &6金锭"
+    name: "&f铁锭 &7→ &6金锭"     # 交易名（聊天提示 + 默认图标名）
+    display_name: "&6金锭兑换"     # 可选：仅列表图标的显示名（不写则用 name）
+    display:                    # 可选：仅列表图标的物品（不写则用输入[0]）
+      library_id: "mc:GOLD_INGOT"
     description:               # 可选：界面 lore 里名字下方的自定义说明
       - "&7把铁锭换成金锭"
       - "&8每日限 1 次"
@@ -99,6 +102,9 @@ trades:
 | 显示物品（仅界面） | `display: { library_id: "ce:ns:id" }` | 图标显示该物品，匹配仍按规则字段 |
 | 显示名字（仅界面） | `display_name: "&6神秘票券"`（别名 `label`） | 界面/lore 显示的名字，不再显示 pdc/英文名 |
 | 数量 | `amount: 8` | 一笔所需/产出数量，默认 1 |
+
+`display` / `display_name` 在**物品规格**（输入/产出）与**交易本身**上都能用：
+交易上的 `display` 只改列表图标物品，`display_name` 只改列表图标名字（`name` 仍用于聊天提示）。
 
 界面显示的名字默认取 **SoulSpace 的统一展示名**（自定义名 → 材质中文名 → 英文名），需要
 SoulSpace **2.5.1+**（`SoulSpaceApi.displayName`）；未装/旧版则退回物品自带显示名/英文材质名。
