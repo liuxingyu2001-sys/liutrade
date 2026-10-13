@@ -1,5 +1,6 @@
 package com.liuxingyu.liutrade;
 
+import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.LinkedHashMap;
@@ -48,9 +49,14 @@ final class ItemSpec {
 
     static ItemSpec parse(Object raw) {
         if (raw instanceof String s && !s.isBlank()) {
+            String value = s.trim();
+            String mat = Materials.canonical(value);
+            if (mat == null) {
+                mat = value;
+            }
             Map<String, Object> rule = new LinkedHashMap<>();
-            rule.put("material", s.trim());
-            return new ItemSpec(null, null, s.trim(), Map.of(), rule, 1, null, null);
+            rule.put("material", mat);
+            return new ItemSpec(null, null, mat, Map.of(), rule, 1, null, null);
         }
         if (!(raw instanceof Map<?, ?> map)) {
             return null;
@@ -85,7 +91,14 @@ final class ItemSpec {
             }
             rule.put(key, entry.getValue());
             if (key.equals("material")) {
-                material = String.valueOf(entry.getValue()).trim();
+                String canonical = Materials.canonical(String.valueOf(entry.getValue()));
+                if (canonical != null) {
+                    // 归一为枚举名（DIAMOND），保证 SoulSpace 规则匹配与旧版兼容
+                    material = canonical;
+                    rule.put(key, canonical);
+                } else {
+                    material = String.valueOf(entry.getValue()).trim();
+                }
             }
         }
         if (libraryId == null && bytes == null && material == null && rule.isEmpty()) {
@@ -103,7 +116,13 @@ final class ItemSpec {
             }
         }
         if (libraryId != null) {
-            return ss.resolveItem(libraryId).orElse(null);
+            ItemStack resolved = ss.resolveItem(libraryId).orElse(null);
+            if (resolved != null) {
+                return resolved;
+            }
+            // 旧版 SoulSpace 或裸材质 id（diamond/minecraft:diamond）本地兑底
+            Material type = Materials.resolve(libraryId);
+            return type == null ? null : new ItemStack(type);
         }
         if (material != null) {
             return ItemBuilder.build(material, components);
@@ -130,7 +149,8 @@ final class ItemSpec {
             return ss.matchesRule(rule, item);
         }
         if (material != null) {
-            return item.getType().name().equalsIgnoreCase(material);
+            Material type = Materials.resolve(material);
+            return type != null && item.getType() == type;
         }
         return false;
     }

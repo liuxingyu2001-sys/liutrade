@@ -38,10 +38,10 @@ final class ItemBuilder {
     private ItemBuilder() {
     }
 
-    /** 由材质 + 组件构建物品；材质非法返回 null。 */
+    /** 由材质 + 组件构建物品；材质非法返回 null（接受 DIAMOND/diamond/minecraft:diamond）。 */
     static ItemStack build(String material, Map<String, Object> components) {
-        Material type = Material.matchMaterial(String.valueOf(material));
-        if (type == null || type.isAir()) {
+        Material type = Materials.resolve(material);
+        if (type == null) {
             return null;
         }
         ItemStack item = new ItemStack(type);

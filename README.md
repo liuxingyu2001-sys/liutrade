@@ -87,7 +87,7 @@ trades:
 
 | 写法 | 例子 | 匹配/生成方式 |
 | --- | --- | --- |
-| 原版材质 | `material: DIAMOND` | 按材质生成/匹配 |
+| 原版材质 | `material: DIAMOND`（= `diamond` = `minecraft:diamond`） | 按材质生成/匹配 |
 | 物品库（CE/MM/IE/原版） | `library_id: "ce:ns:id"` | 经 SoulSpace `resolveItem` 生成，按 `isSimilar` 匹配 |
 | 材质 + 组件 | `material: PAPER` + `components: {...}` | 用组件构建自定义物品，按 `isSimilar` 匹配 |
 | 全保真 | `bytes: "<Base64>"` | `ItemStack.serializeAsBytes()`，任意物品/组件原样还原 |
@@ -100,6 +100,9 @@ trades:
 SoulSpace **2.5.1+**（`SoulSpaceApi.displayName`）；未装/旧版则退回物品自带显示名/英文材质名。
 规则输入（`pdc`/`not_*` 等）想显示成 CE 物品时，用 `display: { library_id: "ce:..." }`，
 再配 `display_name` 指定名字——**仅影响显示，不影响匹配**。
+
+**英文 id 写法很宽松**（`material` 与 `library_id` 均适用）：`DIAMOND` = `diamond` =
+`minecraft:diamond` = `mc:DIAMOND` = `vanilla:diamond`。（SoulSpace 侧自 2.5.2 起同样支持。）
 
 **`components`** 键可带或不带 `minecraft:` 前缀：`custom_name` / `item_name` / `lore` /
 `custom_model_data` / `enchantments`(或 `stored_enchantments`) / `unbreakable` / `rarity` /

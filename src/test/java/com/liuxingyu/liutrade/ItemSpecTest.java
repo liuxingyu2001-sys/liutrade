@@ -75,4 +75,13 @@ class ItemSpecTest {
         assertFalse(spec.rule.containsKey("display_name"));
         assertFalse(spec.nativeRepresentable());
     }
+
+    @Test
+    void normalizesEnglishMaterialIds() {
+        assertEquals("DIAMOND", ItemSpec.parse("diamond").material);
+        ItemSpec spec = ItemSpec.parse(Map.of("material", "minecraft:diamond"));
+        assertEquals("DIAMOND", spec.material);
+        assertEquals("DIAMOND", spec.rule.get("material"));
+        assertEquals("SHULKER_*", ItemSpec.parse(Map.of("material", "shulker_*")).material);
+    }
 }
