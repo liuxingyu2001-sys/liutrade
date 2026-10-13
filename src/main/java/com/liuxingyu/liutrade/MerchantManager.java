@@ -63,24 +63,25 @@ final class MerchantManager {
                     parsed.put(merchant.id, merchant);
                 }
             } catch (Exception e) {
-                plugin.getLogger().warning("解析商店 " + id + " 失败：" + e);
+                warn("解析商店 " + id + " 失败：" + e);
             }
         }
         this.merchants = parsed;
         plugin.getLogger().info("已加载 " + parsed.size() + " 个交易商店。");
     }
 
-    private Merchant parse(YamlConfiguration cfg, String id) {
+    Merchant parse(YamlConfiguration cfg, String id) {
         ConfigurationSection tradeSection = cfg.getConfigurationSection("trades");
         List<Trade> trades = new ArrayList<>();
         if (tradeSection != null) {
             int index = 0;
             for (String key : tradeSection.getKeys(false)) {
-                Object raw = tradeSection.get(key);
-                if (!(raw instanceof Map<?, ?> map)) {
+                if (!(tradeSection.get(key) instanceof ConfigurationSection section)) {
+                    warn("交易 " + id + "#" + key + " 格式不对（应为一个映射），已跳过。");
+                    index++;
                     continue;
                 }
-                Trade trade = parseTrade(map, id + "#" + key + "#" + index);
+                Trade trade = parseTrade(section, id + "#" + key + "#" + index);
                 if (trade != null) {
                     trades.add(trade);
                 }
@@ -88,7 +89,7 @@ final class MerchantManager {
             }
         }
         if (trades.isEmpty()) {
-            plugin.getLogger().warning("商店 " + id + " 没有任何有效交易，已跳过。");
+            warn("商店 " + id + " 没有任何有效交易，已跳过。");
             return null;
         }
         Merchant merchant = new Merchant(id);
@@ -96,52 +97,76 @@ final class MerchantManager {
         merchant.title = cfg.getString("title", merchant.name);
         merchant.npc = orEmpty(cfg.getString("npc", ""));
         merchant.permission = orEmpty(cfg.getString("permission", ""));
-        merchant.icon = ItemSpec.parse(cfg.get("icon"));
+        merchant.icon = spec(cfg.get("icon"));
         merchant.trades = Collections.unmodifiableList(trades);
         return merchant;
     }
 
-    private Trade parseTrade(Map<?, ?> map, String id) {
+    private Trade parseTrade(ConfigurationSection section, String id) {
         List<ItemSpec> inputs = new ArrayList<>();
         List<ItemSpec> outputs = new ArrayList<>();
-        for (Object raw : list(map.get("inputs"), map.get("input"))) {
-            ItemSpec spec = ItemSpec.parse(raw);
+        for (Object raw : list(section.get("inputs"), section.get("input"))) {
+            ItemSpec spec = spec(raw);
             if (spec != null) {
                 inputs.add(spec);
             }
         }
-        for (Object raw : list(map.get("outputs"), map.get("output"))) {
-            ItemSpec spec = ItemSpec.parse(raw);
+        for (Object raw : list(section.get("outputs"), section.get("output"))) {
+            ItemSpec spec = spec(raw);
             if (spec != null) {
                 outputs.add(spec);
             }
         }
         if (inputs.isEmpty() || inputs.size() > 2) {
-            plugin.getLogger().warning("交易 " + id + " 的 inputs 必须为 1~2 项，已跳过。");
+            warn("交易 " + id + " 的 inputs 必须为 1~2 项，已跳过。");
             return null;
         }
-        boolean convert = booleanValue(map.get("convert"), outputs.isEmpty());
+        boolean convert = booleanValue(section.get("convert"), outputs.isEmpty());
         if (convert && inputs.size() > 1) {
-            plugin.getLogger().warning("交易 " + id + " 使用 convert 时必须只有 1 个输入，已跳过。");
+            warn("交易 " + id + " 使用 convert 时必须只有 1 个输入，已跳过。");
             return null;
         }
         if (!convert && outputs.isEmpty()) {
-            plugin.getLogger().warning("交易 " + id + " 既没有 outputs 也没有 convert: true，已跳过。");
+            warn("交易 " + id + " 既没有 outputs 也没有 convert: true，已跳过。");
             return null;
         }
         Trade trade = new Trade(id);
         trade.inputs = Collections.unmodifiableList(inputs);
         trade.outputs = outputs.isEmpty() ? null : Collections.unmodifiableList(outputs);
         trade.convert = convert;
-        Object name = map.get("name");
+        Object name = section.get("name");
         trade.name = name != null ? String.valueOf(name) : inputs.get(0).label();
-        Object permission = map.get("permission");
+        Object permission = section.get("permission");
         trade.permission = permission != null ? String.valueOf(permission) : "";
         return trade;
     }
 
+    /** 把 YAML 里的一个映射（MemorySection 或 Map）或字符串简写转成 ItemSpec。 */
+    private static ItemSpec spec(Object raw) {
+        if (raw instanceof String s) {
+            return ItemSpec.parse(s);
+        }
+        if (raw instanceof ConfigurationSection cs) {
+            return ItemSpec.parse(new LinkedHashMap<>(cs.getValues(false)));
+        }
+        if (raw instanceof Map<?, ?> map) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> e : map.entrySet()) {
+                out.put(String.valueOf(e.getKey()), e.getValue());
+            }
+            return ItemSpec.parse(out);
+        }
+        return null;
+    }
+
     private static String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private void warn(String message) {
+        if (plugin != null) {
+            plugin.getLogger().warning(message);
+        }
     }
 
     private static List<Object> list(Object first, Object second) {
