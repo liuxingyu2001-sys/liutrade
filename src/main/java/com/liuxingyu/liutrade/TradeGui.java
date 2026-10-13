@@ -142,13 +142,18 @@ final class TradeGui implements InventoryHolder {
         if (batches <= 0) {
             return button(Material.BARRIER, "&c无法完成交易", "&7物品数量不足");
         }
-        ItemStack result = plugin.service().preview(player, trade);
-        if (result == null || result.getType().isAir()) {
+        List<ItemStack> previews = plugin.service().previewAll(player, trade);
+        if (previews.isEmpty()) {
             return button(Material.BARRIER, "&c无法完成交易", "&7物品数量不足，或转换规则未命中");
         }
+        ItemStack result = previews.get(0);
         ItemMeta meta = result.getItemMeta();
         if (meta != null) {
             List<String> lore = meta.hasLore() && meta.getLore() != null ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+            for (int i = 1; i < previews.size(); i++) {
+                ItemStack extra = previews.get(i);
+                lore.add(Msg.color("&7额外产出：&f" + plugin.itemName(extra) + " &7x" + extra.getAmount()));
+            }
             lore.add("");
             lore.add(Msg.color("&e左键交易 1 次"));
             if (batches > 1) {
@@ -163,8 +168,11 @@ final class TradeGui implements InventoryHolder {
     }
 
     private ItemStack tradeIcon(Trade trade, int index) {
-        ItemStack sample = trade.inputs.get(0).sample(plugin.soulSpace());
-        ItemStack icon = sample != null ? sample.clone() : new ItemStack(Material.CHEST);
+        ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
+        ItemStack sample = first == null ? null : first.iconSample(plugin.soulSpace());
+        ItemStack fallback = merchant.icon == null ? null : merchant.icon.iconSample(plugin.soulSpace());
+        ItemStack icon = sample != null ? sample.clone()
+                : (fallback != null ? fallback.clone() : new ItemStack(Material.CHEST));
         icon.setAmount(1);
         ItemMeta meta = icon.getItemMeta();
         if (meta == null) {
@@ -172,20 +180,37 @@ final class TradeGui implements InventoryHolder {
         }
         meta.setDisplayName(Msg.color("&f" + trade.name));
         List<String> lore = new ArrayList<>();
-        lore.add(Msg.color("&7需求："));
+        for (String line : trade.description) {
+            lore.add(Msg.color(line));
+        }
+        if (!trade.description.isEmpty()) {
+            lore.add("");
+        }
+        if (trade.inputs.size() > 1) {
+            lore.add(Msg.color("&7需求（全部）："));
+        } else {
+            lore.add(Msg.color("&7需求："));
+        }
         for (ItemSpec input : trade.inputs) {
-            lore.add(Msg.color("  &8- &f" + input.label() + " &7x" + input.amount));
+            lore.add(Msg.color("  &8- &f" + plugin.specName(input) + " &7x" + input.amount));
         }
         lore.add(Msg.color("&7产出："));
-        ItemStack preview = plugin.service().preview(player, trade);
-        if (preview != null && !preview.getType().isAir()) {
-            lore.add(Msg.color("  &8- &f" + plugin.itemName(preview) + " &7x" + preview.getAmount()
-                    + (trade.convert ? " &8(转换)" : "")));
+        List<ItemStack> previews = plugin.service().previewAll(player, trade);
+        if (!previews.isEmpty()) {
+            for (ItemStack pv : previews) {
+                lore.add(Msg.color("  &8- &f" + plugin.itemName(pv) + " &7x" + pv.getAmount()
+                        + (trade.convert ? " &8(转换)" : "")));
+            }
         } else {
             lore.add(Msg.color("  &8- &c" + (trade.convert ? "转换规则未命中" : "无法解析")));
         }
         lore.add("");
+        int batches = batches(trade);
+        lore.add(Msg.color(batches > 0 ? "&7当前可交易 &f" + batches + " &7次" : "&c物品不足，无法交易"));
         lore.add(Msg.color("&e左键：自动放入所需物品"));
+        if (first != null && !first.nativeRepresentable()) {
+            lore.add(Msg.color("&8按规则匹配（需自定义界面）"));
+        }
         meta.setLore(lore);
         if (index == selected) {
             meta.setEnchantmentGlintOverride(true);

@@ -40,7 +40,7 @@
 | `liutrade.admin` | op | 为其他玩家打开商店 |
 | `liutrade.admin.reload` | op | 重载配置 |
 
-单笔交易还可在 YAML 里写 `permission:` 限制。
+单笔交易还可在 YAML 里写 `permission:` 限制、`description:` 写界面说明。
 
 ## 商店配置
 
@@ -56,6 +56,9 @@ icon:                         # 商店图标
 trades:
   铁换金:                      # 交易键（仅作标识）
     name: "&f铁锭 &7→ &6金锭"
+    description:               # 可选：界面 lore 里名字下方的自定义说明
+      - "&7把铁锭换成金锭"
+      - "&8每日限 1 次"
     inputs:                   # 1~2 个输入
       - material: IRON_INGOT
         amount: 8
@@ -89,7 +92,14 @@ trades:
 | 材质 + 组件 | `material: PAPER` + `components: {...}` | 用组件构建自定义物品，按 `isSimilar` 匹配 |
 | 全保真 | `bytes: "<Base64>"` | `ItemStack.serializeAsBytes()`，任意物品/组件原样还原 |
 | 规则字段 | `material: PAPER` + `pdc: jiu:jiu` | 经 SoulSpace `matchesRule` 匹配（支持 `not_pdc` 等否定） |
+| 显示物品（仅界面） | `display: { library_id: "ce:ns:id" }` | 图标显示该物品，匹配仍按规则字段 |
+| 显示名字（仅界面） | `display_name: "&6神秘票券"`（别名 `label`） | 界面/lore 显示的名字，不再显示 pdc/英文名 |
 | 数量 | `amount: 8` | 一笔所需/产出数量，默认 1 |
+
+界面显示的名字默认取 **SoulSpace 的统一展示名**（自定义名 → 材质中文名 → 英文名），需要
+SoulSpace **2.5.1+**（`SoulSpaceApi.displayName`）；未装/旧版则退回物品自带显示名/英文材质名。
+规则输入（`pdc`/`not_*` 等）想显示成 CE 物品时，用 `display: { library_id: "ce:..." }`，
+再配 `display_name` 指定名字——**仅影响显示，不影响匹配**。
 
 **`components`** 键可带或不带 `minecraft:` 前缀：`custom_name` / `item_name` / `lore` /
 `custom_model_data` / `enchantments`(或 `stored_enchantments`) / `unbreakable` / `rarity` /
@@ -103,7 +113,9 @@ trades:
 ### 产出
 
 - `convert: true`：产出由 SoulSpace 的 `convert/*.yml` 转换规则决定（**仅支持单输入**）。
-- `outputs:`：显式列出产出（`material` / `material`+`components` / `library_id` / `bytes`）。
+- `outputs:`：显式列出产出，**支持多条**（`material` / `material`+`components` / `library_id` / `bytes`）。
+  自定义界面会依次发放全部产出；原生村民界面每笔只能给一个结果，故第一个作为配方结果、
+  其余在购买成功后补发。
 
 ## 界面
 

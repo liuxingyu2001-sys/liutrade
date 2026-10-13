@@ -78,4 +78,55 @@ class MerchantManagerTest {
                     convert: true
                 """));
     }
+
+    @Test
+    void parsesDescriptionAsListOrString() throws Exception {
+        Merchant merchant = parse("""
+                name: "店"
+                trades:
+                  甲:
+                    description:
+                      - "第一行"
+                      - "第二行"
+                    inputs:
+                      - material: IRON_INGOT
+                    outputs:
+                      - material: GOLD_INGOT
+                  乙:
+                    description: "就一行"
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                """);
+        assertNotNull(merchant);
+        assertEquals(2, merchant.trades.get(0).description.size());
+        assertEquals("第一行", merchant.trades.get(0).description.get(0));
+        assertEquals(1, merchant.trades.get(1).description.size());
+        assertEquals("就一行", merchant.trades.get(1).description.get(0));
+    }
+
+    @Test
+    void parsesMultipleOutputsAndDisplay() throws Exception {
+        Merchant merchant = parse("""
+                name: "店"
+                trades:
+                  多产出:
+                    inputs:
+                      - material: PAPER
+                        pdc: "jiu:jiu"
+                        display:
+                          library_id: "ce:ns:ticket"
+                        display_name: "&6票券"
+                    outputs:
+                      - material: GOLD_INGOT
+                        amount: 2
+                      - material: EMERALD
+                """);
+        assertNotNull(merchant);
+        Trade trade = merchant.trades.get(0);
+        assertEquals(2, trade.outputs.size());
+        assertEquals("ce:ns:ticket", trade.inputs.get(0).display.libraryId);
+        assertEquals("&6票券", trade.inputs.get(0).configuredName());
+    }
 }

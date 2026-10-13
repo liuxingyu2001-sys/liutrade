@@ -16,14 +16,21 @@ final class TradeService {
         this.plugin = plugin;
     }
 
-    /** 预览一笔交易的产出（按 1 次）。无法产出返回 null。 */
+    /** 预览一笔交易的第一个产出（按 1 次）；无法产出返回 null。 */
     ItemStack preview(Player player, Trade trade) {
-        return produce(player, trade, null);
+        List<ItemStack> all = previewAll(player, trade);
+        return all.isEmpty() ? null : all.get(0);
     }
 
-    /** 根据真实输入物品计算单次产出（村民界面用）。 */
+    /** 预览一笔交易的全部产出（按 1 次）。 */
+    List<ItemStack> previewAll(Player player, Trade trade) {
+        return produceAll(player, trade, null);
+    }
+
+    /** 根据真实输入物品计算单次产出的第一个（村民界面用）。 */
     ItemStack result(Player player, Trade trade, ItemStack input) {
-        return produce(player, trade, input);
+        List<ItemStack> all = produceAll(player, trade, input);
+        return all.isEmpty() ? null : all.get(0);
     }
 
     /**
@@ -47,12 +54,12 @@ final class TradeService {
         List<ItemStack> outputs = new ArrayList<>();
         for (int i = 0; i < times; i++) {
             ItemStack subject = inventory.getItem(TradeGui.SLOT_IN1);
-            ItemStack output = produce(player, trade, subject);
-            if (output == null || output.getType().isAir()) {
+            List<ItemStack> produced = produceAll(player, trade, subject);
+            if (produced.isEmpty()) {
                 player.sendMessage(plugin.prefixed(trade.convert ? "soulspace-missing" : "trade-fail"));
                 return false;
             }
-            outputs.add(output);
+            outputs.addAll(produced);
         }
         for (int i = 0; i < trade.inputs.size(); i++) {
             int slot = i == 0 ? TradeGui.SLOT_IN1 : TradeGui.SLOT_IN2;
@@ -77,28 +84,38 @@ final class TradeService {
         return true;
     }
 
-    private ItemStack produce(Player player, Trade trade, ItemStack subject) {
+    /**
+     * 计算一笔交易一次的全部产出（按顺序）：显式 {@code outputs} 逐条构建，
+     * 或 {@code convert: true} 时经 SoulSpace 转换规则。
+     */
+    List<ItemStack> produceAll(Player player, Trade trade, ItemStack subject) {
+        List<ItemStack> results = new ArrayList<>();
         if (trade.outputs != null) {
-            ItemSpec spec = trade.outputs.get(0);
-            ItemStack sample = spec.sample(plugin.soulSpace());
-            if (sample == null) {
-                return null;
+            for (ItemSpec spec : trade.outputs) {
+                ItemStack sample = spec.sample(plugin.soulSpace());
+                if (sample == null || sample.getType().isAir()) {
+                    continue;
+                }
+                ItemStack output = sample.clone();
+                output.setAmount(Math.min(spec.amount, output.getMaxStackSize()));
+                results.add(output);
             }
-            ItemStack output = sample.clone();
-            output.setAmount(Math.min(spec.amount, output.getMaxStackSize()));
-            return output;
+            return results;
         }
         ItemStack input = subject;
-        if (input == null || input.getType().isAir()) {
-            input = trade.inputs.get(0).sample(plugin.soulSpace());
-        } else if (!trade.inputs.get(0).matches(input, plugin.soulSpace())) {
+        if (input == null || input.getType().isAir()
+                || !trade.inputs.get(0).matches(input, plugin.soulSpace())) {
             input = trade.inputs.get(0).sample(plugin.soulSpace());
         }
-        if (input == null) {
-            return null;
+        if (input == null || input.getType().isAir()) {
+            return results;
         }
         ItemStack convertedInput = input.clone();
         convertedInput.setAmount(Math.min(trade.inputs.get(0).amount, convertedInput.getMaxStackSize()));
-        return plugin.soulSpace().convert(player.getUniqueId(), convertedInput).orElse(null);
+        ItemStack converted = plugin.soulSpace().convert(player.getUniqueId(), convertedInput).orElse(null);
+        if (converted != null && !converted.getType().isAir()) {
+            results.add(converted);
+        }
+        return results;
     }
 }

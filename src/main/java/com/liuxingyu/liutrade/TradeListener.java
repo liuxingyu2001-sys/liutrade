@@ -126,10 +126,13 @@ final class TradeListener implements Listener {
             return;
         }
         Trade trade = session.tradeAt(inventory.getSelectedRecipeIndex());
-        if (trade != null && plugin.config().feedback) {
-            player.sendMessage(plugin.prefixed("trade-success",
-                    "%name%", Msg.color(trade.name),
-                    "%times%", "1"));
+        if (trade != null) {
+            session.grantExtras(player, trade, inventory.getItem(0));
+            if (plugin.config().feedback) {
+                player.sendMessage(plugin.prefixed("trade-success",
+                        "%name%", Msg.color(trade.name),
+                        "%times%", "1"));
+            }
         }
     }
 

@@ -207,15 +207,41 @@ public final class LiuTrade extends JavaPlugin {
         return config.prefixed(key, replacements);
     }
 
+    /** 物品展示名：经 SoulSpace（自定义名 → 材质中文名）→ 本地自定义名 → 英文材质名。 */
     String itemName(ItemStack item) {
         if (item == null || item.getType().isAir()) {
             return "?";
         }
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null && meta.hasDisplayName()) {
-            return Msg.plain(meta.getDisplayName());
+        String viaSoulSpace = soulSpace.displayName(item);
+        if (viaSoulSpace != null) {
+            return Msg.plain(viaSoulSpace);
         }
-        return item.getType().name().toLowerCase();
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            if (meta.hasDisplayName()) {
+                return Msg.plain(meta.getDisplayName());
+            }
+            if (meta.hasItemName()) {
+                return Msg.plain(meta.getItemName());
+            }
+        }
+        return item.getType().name().toLowerCase().replace('_', ' ');
+    }
+
+    /** 物品规格的界面显示名：配置的 display_name/label 优先，否则按显示样品取名，再兜底 label()。 */
+    String specName(ItemSpec spec) {
+        if (spec == null) {
+            return "?";
+        }
+        String configured = spec.configuredName();
+        if (configured != null) {
+            return Msg.plain(configured);
+        }
+        ItemStack icon = spec.iconSample(soulSpace);
+        if (icon != null && !icon.getType().isAir()) {
+            return itemName(icon);
+        }
+        return spec.label();
     }
 
     /** 供外部（命令）使用。 */

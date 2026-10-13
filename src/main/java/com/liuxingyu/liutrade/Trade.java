@@ -7,6 +7,8 @@ final class Trade {
 
     final String id;
     String name;
+    /** 界面 lore 里自定义的说明文字（在名字下方）。 */
+    List<String> description = java.util.Collections.emptyList();
     List<ItemSpec> inputs;
     /** 显式产出；为 null 表示用 {@link #convert} 走 SoulSpace 转换规则。 */
     List<ItemSpec> outputs;

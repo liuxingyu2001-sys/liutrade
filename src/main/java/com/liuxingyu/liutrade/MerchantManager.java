@@ -134,6 +134,7 @@ final class MerchantManager {
         trade.inputs = Collections.unmodifiableList(inputs);
         trade.outputs = outputs.isEmpty() ? null : Collections.unmodifiableList(outputs);
         trade.convert = convert;
+        trade.description = stringList(section.get("description"));
         Object name = section.get("name");
         trade.name = name != null ? String.valueOf(name) : inputs.get(0).label();
         Object permission = section.get("permission");
@@ -161,6 +162,21 @@ final class MerchantManager {
 
     private static String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    /** 把字符串或字符串列表归一为不可变列表（用于 description 等）。 */
+    private static List<String> stringList(Object value) {
+        List<String> out = new ArrayList<>();
+        if (value instanceof List<?> l) {
+            for (Object o : l) {
+                if (o != null) {
+                    out.add(String.valueOf(o));
+                }
+            }
+        } else if (value != null) {
+            out.add(String.valueOf(value));
+        }
+        return Collections.unmodifiableList(out);
     }
 
     private void warn(String message) {

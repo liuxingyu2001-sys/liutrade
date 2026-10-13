@@ -19,6 +19,9 @@
 #   5) 规则匹配（仅输入）：material: PAPER + pdc: "jiu:jiu"（+ not_pdc: soulbound）
 #      —— 用 pdc/name/lore/custom_model_data + not 匹配任意物品；原生村民界面无法按
 #      规则匹配这类输入（需 settings.gui-mode: custom）。
+#   6) 显示覆盖（仅界面）：
+#        display: { library_id: "ce:..." }   # 图标显示这个物品，匹配仍按上面规则
+#        display_name: "&6神秘票券"           # 界面里显示的名字（不写则自动取中文名）
 #   amount 默认 1。
 #
 # 每笔交易 = 1~2 个输入 → 1 个产出：
@@ -33,6 +36,8 @@ icon:              # 商店图标
 trades:
   铁换金:
     name: "&f铁锭 &7→ &6金锭"
+    description:
+      - "&7把铁锭换成金锭"
     inputs:
       - material: IRON_INGOT
         amount: 8
@@ -71,3 +76,15 @@ trades:
         components:
           custom_name: "&b纪念品"
           custom_data: '{source:"liutrade",value:42,rare:true}'
+  规则输入显示为 CE 物品:
+    name: "&f神秘票券 &7→ &6金锭"
+    inputs:
+      # 匹配：纸 + pdc 标记；界面：显示成 CE 物品 + 自定义名（需 settings.gui-mode: custom）
+      - material: PAPER
+        pdc: "jiu:jiu"
+        display:
+          library_id: "ce:example:ticket"
+        display_name: "&6神秘票券"
+    outputs:
+      - material: GOLD_INGOT
+        amount: 2

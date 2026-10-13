@@ -23,6 +23,7 @@ final class SoulSpaceHook {
     private volatile Object api;
     private Method mResolve;
     private Method mMatches;
+    private Method mDisplayName;
     private Method mConversion;
     private Method mConvert;
     private Method mHasRule;
@@ -38,6 +39,11 @@ final class SoulSpaceHook {
     /** SoulSpace 是否提供规则匹配（2.5.0+）。 */
     boolean canMatchRules() {
         return api != null && mMatches != null;
+    }
+
+    /** SoulSpace 是否提供统一展示名（2.5.1+）。 */
+    boolean canDisplayName() {
+        return api != null && mDisplayName != null;
     }
 
     /** 连接 SoulSpace；成功返回 true。可重复调用。 */
@@ -64,6 +70,7 @@ final class SoulSpaceHook {
             // 2.5.0 新增；旧版没有则仅影响 library_id / 规则匹配。
             this.mResolve = tryMethod(apiClass, "resolveItem", String.class);
             this.mMatches = tryMethod(apiClass, "matchesRule", Map.class, ItemStack.class);
+            this.mDisplayName = tryMethod(apiClass, "displayName", ItemStack.class);
             this.api = provider;
             return true;
         } catch (Throwable t) {
@@ -147,6 +154,22 @@ final class SoulSpaceHook {
             return Boolean.TRUE.equals(mHasRule.invoke(conversion, item));
         } catch (Throwable t) {
             return false;
+        }
+    }
+
+    /** 经 SoulSpace 取统一展示名（中文/物品库名）；不可用或失败返回 null。 */
+    String displayName(ItemStack item) {
+        if (!available() || mDisplayName == null || item == null) {
+            return null;
+        }
+        try {
+            Object result = mDisplayName.invoke(api, item);
+            if (result instanceof String s && !s.isBlank()) {
+                return s;
+            }
+            return null;
+        } catch (Throwable t) {
+            return null;
         }
     }
 }

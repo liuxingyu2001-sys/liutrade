@@ -105,6 +105,17 @@ final class NativeShopSession {
         return plugin.service().result(player, trade, inventory.getItem(0));
     }
 
+    /**
+     * 发放第一产出之外的其余产出。原生村民界面每笔只能给一个结果，
+     * 因此配方只用第一个产出，其余在购买成功后补发。
+     */
+    void grantExtras(Player buyer, Trade trade, ItemStack subject) {
+        List<ItemStack> all = plugin.service().produceAll(buyer, trade, subject);
+        for (int i = 1; i < all.size(); i++) {
+            TradeGui.giveOrDrop(buyer, all.get(i));
+        }
+    }
+
     /** 校验当前输入槽是否精确满足所选交易（数量足够、无多余物品）。 */
     boolean validate(MerchantInventory inventory) {
         Trade trade = tradeAt(inventory.getSelectedRecipeIndex());
