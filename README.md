@@ -1,0 +1,123 @@
+# LiuTrade
+
+虚拟村民交易插件：读取**独立 YAML**（每个文件 = 一个商店/村民），用**村民式界面**放入物品、取出新物品。
+
+- 交易输入复用 **SoulSpace 统一物品规则**（`material` / `pdc` / `name` / `lore` / `custom_model_data`，支持 `not_*` 否定）；
+- 产出两种方式：**走 SoulSpace `convert/` 转换规则**（`convert: true`，默认），或**显式**写出（`library_id` 经 SoulSpace 解析 `ce:/mm:/ie:/mc:`，或原版 `material`）；
+- 支持绑定 **Citizens** NPC：右键 NPC 直接打开对应商店；
+- 未安装 SoulSpace 时自动退化为「仅原版材质」交易，不报错。
+
+> 依赖：[SoulSpace](https://github.com/liuxingyu2001-sys/soulspace) **2.5.0+**（软依赖，用于规则匹配、物品库解析、转换产出）。
+
+## 环境
+
+- Paper 1.21+（Folia 兼容）
+- Java 21
+- 可选：SoulSpace 2.5.0+、Citizens
+
+## 安装
+
+1. 把 `Liu-LiuTrade-<版本>.jar` 放进 `plugins/`；
+2. 启动一次，生成 `plugins/LiuTrade/config.yml` 与 `plugins/LiuTrade/merchants/_example.yml`；
+3. 复制 `_example.yml` 去掉下划线（例如 `blacksmith.yml`）并改写；
+4. `/liutrade reload` 或等待自动重载（默认 10 秒轮询）。
+
+## 命令与权限
+
+| 命令 | 说明 |
+| --- | --- |
+| `/liutrade` | 打开商店（只有一个时直接打开，多个时列出） |
+| `/liutrade open <商店>` | 打开指定商店（`<商店>` = 文件相对路径，去掉 `.yml`） |
+| `/liutrade list` | 列出全部商店 |
+| `/liutrade reload` | 重载全部商店配置 |
+
+| 权限 | 默认 | 说明 |
+| --- | --- | --- |
+| `liutrade.use` | true | 打开交易商店 |
+| `liutrade.admin.reload` | op | 重载配置 |
+
+单笔交易还可在 YAML 里写 `permission:` 限制。
+
+## 商店配置
+
+`plugins/LiuTrade/merchants/**.yml`（递归扫描，相对路径排序，`_` 前缀的文件不加载）：
+
+```yaml
+name: "&6铁匠"                 # 商店名
+title: "&8&l铁匠的交易"         # GUI 标题
+npc: ""                       # Citizens NPC 的 id（数字）或名字；留空 = 只能用 /liutrade open
+permission: ""                # 打开本商店所需权限；留空不限制
+icon:                         # 商店图标
+  library_id: "mc:ANVIL"
+trades:
+  铁换金:                      # 交易键（仅作标识）
+    name: "&f铁锭 &7→ &6金锭"
+    inputs:                   # 1~2 个输入
+      - material: IRON_INGOT
+        amount: 8
+    convert: true             # 产出走 SoulSpace 转换规则（仅限单输入）
+  钻换绿宝石:
+    name: "&f钻石 &7→ &a绿宝石 x2"
+    inputs:
+      - material: DIAMOND
+        amount: 1
+    outputs:                  # 显式产出
+      - material: EMERALD
+        amount: 2
+  双材料:
+    name: "&f金锭+红石 &7→ &b时钟"
+    inputs:
+      - material: GOLD_INGOT
+        amount: 4
+      - material: REDSTONE
+        amount: 16
+    outputs:
+      - material: CLOCK
+        amount: 1
+```
+
+### 物品规格
+
+| 写法 | 例子 | 匹配/生成方式 |
+| --- | --- | --- |
+| 原版材质 | `material: DIAMOND` | 按材质匹配 |
+| 物品库 | `library_id: "ce:ns:id"` | 经 SoulSpace `resolveItem` 生成，按 `isSimilar` 匹配 |
+| 规则字段 | `material: PAPER` + `pdc: jiu:jiu` | 经 SoulSpace `matchesRule` 匹配（支持 `not_pdc` 等否定） |
+| 数量 | `amount: 8` | 一笔所需/产出数量，默认 1 |
+
+规则字段与 SoulSpace 分类/黑名单/转换规则一致，单条内所有字段是「且」，`not_*` 一票否决。
+
+### 产出
+
+- `convert: true`：产出由 SoulSpace 的 `convert/*.yml` 转换规则决定（**仅支持单输入**）。
+- `outputs:`：显式列出产出（`material` 或经 SoulSpace 解析的 `library_id`）。
+
+## 界面
+
+```
+左 5 列 × 5 行 = 交易列表（每页 25 笔，左键点击自动放入所需物品）
+右侧  23 = 输入1   24 = 输入2   25 = 产出
+底行  45 = 上一页  49 = 关闭    53 = 下一页
+```
+
+- 把物品放进输入槽，产出槽会实时显示能换到什么；
+- **左键产出槽**成交 1 次，**Shift+左键**成交全部可成交次数；
+- 关界面时输入槽里没取走的物品会退回背包（可用 `settings.leftover-on-close: void` 改为丢弃）。
+
+## 主要配置（config.yml）
+
+| 键 | 默认 | 说明 |
+| --- | --- | --- |
+| `settings.shared-config-path` | 空 | 共享配置目录；多服可指向同一目录，改一处全服生效 |
+| `settings.auto-reload` | true | 自动检测配置变化并热重载 |
+| `settings.poll-interval-ticks` | 200 | 轮询间隔（tick） |
+| `settings.leftover-on-close` | return | 关界面时输入槽物品处理：`return` / `void` |
+| `settings.feedback` | true | 交易成功是否提示 |
+| `settings.max-pages` | 20 | 界面翻页上限 |
+
+## 构建
+
+```bash
+mvn clean package
+# 产物：target/Liu-LiuTrade-<版本>.jar
+```

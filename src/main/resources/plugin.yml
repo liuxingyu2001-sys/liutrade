@@ -1,0 +1,25 @@
+name: LiuTrade
+version: ${project.version}
+main: com.liuxingyu.liutrade.LiuTrade
+api-version: 1.21
+folia-supported: true
+authors: [liuxingyu2001]
+description: 虚拟村民交易 - 读取独立 YAML，放入物品取出新物品（依赖 SoulSpace）
+softdepend: [SoulSpace, Citizens]
+commands:
+  liutrade:
+    description: 交易商店（打开 / 列表 / 重载）
+    usage: /liutrade [open <商店> | list | reload]
+    aliases: [lt, trade]
+permissions:
+  liutrade.use:
+    description: 打开交易商店
+    default: true
+  liutrade.admin:
+    description: 交易商店管理总权限
+    default: op
+    children:
+      liutrade.admin.reload: true
+  liutrade.admin.reload:
+    description: 重载交易配置
+    default: op

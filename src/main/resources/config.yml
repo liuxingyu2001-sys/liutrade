@@ -1,0 +1,35 @@
+# LiuTrade 配置文件
+#
+# 交易商店放在 merchants/ 目录（每个 .yml 一个商店/村民），详见 merchants/_example.yml。
+# 规则中的物品字段复用 SoulSpace 统一规则（material / pdc / name / lore /
+# custom_model_data + not 否定），产出可用 library_id（ce:/mm:/ie:/mc:）经 SoulSpace 解析。
+
+config-version: 1
+
+settings:
+  # 共享配置目录：留空 = 插件自身数据目录（plugins/LiuTrade）。
+  # 多台服务器可指向同一目录（如 /mc/shared/liutrade-config）实现改一处全服生效。
+  shared-config-path: ''
+  # 自动检测共享配置/merchants 目录变化并热重载。
+  auto-reload: true
+  # 轮询间隔（tick）。200 tick = 10 秒。
+  poll-interval-ticks: 200
+  # 关掉界面后，槽位里没取走的输入物品如何处理：return = 退回背包（放不下掉落），void = 丢弃。
+  leftover-on-close: return
+  # 完成一次交易是否发送 ActionBar 提示。
+  feedback: true
+  # 单个界面最多显示的页数保护（每个商店交易很多时用）。
+  max-pages: 20
+
+messages:
+  prefix: '&8[&6交易&8] &r'
+  no-permission: '&c你没有权限这样做。'
+  merchant-not-found: '&c找不到商店：&f%name%'
+  trade-not-found: '&c找不到交易：&f%id%'
+  no-trades: '&7这个商店还没有配置交易。'
+  trade-success: '&a交易成功：&f%name% &7x&f%times%'
+  trade-fail: '&c物品不足，无法完成交易。'
+  output-full: '&e背包放不下产出，已尽量放入。'
+  limit-reached: '&c这笔交易已达上限（%limit% 次）。'
+  soulspace-missing: '&c这笔交易需要 SoulSpace（未安装或未启用）。'
+  reloaded: '&a已重载 &f%count% &a个商店。'

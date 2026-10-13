@@ -1,0 +1,45 @@
+# LiuTrade 商店模板
+# 以 _ 开头的文件不会被加载；复制本文件、去掉下划线并改写即可新建一个商店（=一个虚拟村民）。
+#
+# 物品规格写法：
+#   1) 原版材质：        material: DIAMOND
+#   2) 物品库（SoulSpace）：library_id: "ce:命名空间:物品id"   # 支持 ce:/mm:/ie:/mc:
+#   3) 规则匹配：        material: PAPER
+#                        pdc: "jiu:jiu"          # 还可用 name / lore / custom_model_data
+#                        not_pdc: "soulbound"    # not_ 前缀 = 否定（一票否决）
+#   amount 默认 1。
+#
+# 每笔交易 = 1~2 个输入 → 1 个产出：
+#   · convert: true  —— 产出由 SoulSpace 的 convert/ 转换规则决定（仅限单输入）
+#   · outputs       —— 显式列出产出
+name: "&6铁匠"
+title: "&8&l铁匠的交易"
+npc: ""            # Citizens NPC 的 id（数字）或名字；留空则只能用 /liutrade open 打开
+permission: ""     # 打开本商店所需权限；留空不限制
+icon:              # 商店图标（/liutrade list 展示用）
+  library_id: "mc:ANVIL"
+trades:
+  铁换金:
+    name: "&f铁锭 &7→ &6金锭"
+    inputs:
+      - material: IRON_INGOT
+        amount: 8
+    convert: true
+  钻换绿宝石:
+    name: "&f钻石 &7→ &a绿宝石 x2"
+    inputs:
+      - material: DIAMOND
+        amount: 1
+    outputs:
+      - material: EMERALD
+        amount: 2
+  双材料:
+    name: "&f金锭+红石 &7→ &b时钟"
+    inputs:
+      - material: GOLD_INGOT
+        amount: 4
+      - material: REDSTONE
+        amount: 16
+    outputs:
+      - material: CLOCK
+        amount: 1
