@@ -322,7 +322,7 @@ final class TradeGui implements InventoryHolder {
         if (meta != null) {
             meta.setDisplayName(Msg.color(name));
             if (lore != null && !lore.isEmpty()) {
-                meta.setLore(lore);
+                meta.setLore(Msg.color(lore));
             }
             item.setItemMeta(meta);
         }
@@ -371,10 +371,22 @@ final class TradeGui implements InventoryHolder {
 
     /** 从玩家背包取出该交易一批所需物品，放入输入槽。 */
     void autoFill(Trade trade) {
+        autoFill(trade, 1);
+    }
+
+    /**
+     * 左键交易时自动放入物品。
+     *
+     * @param batches 期望放入的批数；{@code <= 0} 或 {@link Integer#MAX_VALUE} 表示尽量全部放入
+     */
+    void autoFill(Trade trade, int batches) {
         returnInputs();
         for (int i = 0; i < trade.inputs.size(); i++) {
             ItemSpec spec = trade.inputs.get(i);
-            ItemStack taken = takeFromPlayer(spec, spec.amount);
+            int need = batches >= Integer.MAX_VALUE || batches <= 0
+                    ? Integer.MAX_VALUE
+                    : spec.amount * batches;
+            ItemStack taken = takeFromPlayer(spec, need);
             if (taken != null) {
                 inventory.setItem(inputSlot(i), taken);
             }
@@ -390,6 +402,13 @@ final class TradeGui implements InventoryHolder {
             ItemStack item = inv.getItem(i);
             if (item == null || item.getType().isAir() || !spec.matches(item, plugin.soulSpace())) {
                 continue;
+            }
+            if (result == null) {
+                // 一个槽位最多放该物品的最大堆叠数
+                need = Math.min(need, item.getMaxStackSize());
+                if (need <= 0) {
+                    return null;
+                }
             }
             int take = Math.min(need, item.getAmount());
             if (result == null) {

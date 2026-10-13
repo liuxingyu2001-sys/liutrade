@@ -58,7 +58,7 @@ final class TradeListener implements Listener {
         } else if (TradeGui.isTradeSlot(slot)) {
             int index = gui.page() * TradeGui.TRADE_SLOTS.length + tradeIndex(slot);
             if (index >= 0 && index < gui.merchant().trades.size()) {
-                gui.autoFill(gui.merchant().trades.get(index));
+                gui.autoFill(gui.merchant().trades.get(index), 0);
             }
         }
     }
