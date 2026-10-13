@@ -94,26 +94,34 @@ trades:
 
 ## 界面
 
+默认 `settings.gui-mode: villager`，即 **原生村民交易界面**（左列表、滚动、点击自动放入、音效均为客户端原生）：
+
+- 交易列表就是客户端左侧列表，超过 7 笔自动出现滚动条；
+- 点交易自动从背包填入输入槽，点产出即成交；
+- 输入按**物品**匹配（取物品规格的示例：`library_id` 解析结果或 `material`）；
+- 含 `pdc`/`name`/`not_*` 等规则字段、示例无法唯一代表的输入会被跳过（日志会提示）。
+
+需要按规则（`pdc`/`not`）匹配任意物品、或想要分页时，改为 `settings.gui-mode: custom`（自定义箱子界面）：
+
 ```
 左 5 列 × 5 行 = 交易列表（每页 25 笔，左键点击自动放入所需物品）
 右侧  23 = 输入1   24 = 输入2   25 = 产出
 底行  45 = 上一页  49 = 关闭    53 = 下一页
 ```
 
-- 把物品放进输入槽，产出槽会实时显示能换到什么；
-- **左键产出槽**成交 1 次，**Shift+左键**成交全部可成交次数；
-- 关界面时输入槽里没取走的物品会退回背包（可用 `settings.leftover-on-close: void` 改为丢弃）。
+自定义界面里：左键产出槽成交 1 次，Shift+左键成交全部；关界面时输入槽里没取走的物品会退回背包（`settings.leftover-on-close: void` 可改为丢弃）。
 
 ## 主要配置（config.yml）
 
 | 键 | 默认 | 说明 |
 | --- | --- | --- |
+| `settings.gui-mode` | villager | `villager` = 原生村民界面；`custom` = 自定义箱子界面（支持规则匹配/分页） |
 | `settings.shared-config-path` | 空 | 共享配置目录；多服可指向同一目录，改一处全服生效 |
 | `settings.auto-reload` | true | 自动检测配置变化并热重载 |
 | `settings.poll-interval-ticks` | 200 | 轮询间隔（tick） |
-| `settings.leftover-on-close` | return | 关界面时输入槽物品处理：`return` / `void` |
+| `settings.leftover-on-close` | return | 自定义界面关界面时输入槽物品处理：`return` / `void` |
 | `settings.feedback` | true | 交易成功是否提示 |
-| `settings.max-pages` | 20 | 界面翻页上限 |
+| `settings.max-pages` | 20 | 自定义界面翻页上限 |
 
 ## 构建
 

@@ -15,6 +15,7 @@ final class TradeConfig {
     String leftoverOnClose = "return";
     boolean feedback = true;
     int maxPages = 20;
+    String guiMode = "villager";
 
     void load(FileConfiguration cfg) {
         sharedConfigPath = cfg.getString("settings.shared-config-path", "");
@@ -23,6 +24,7 @@ final class TradeConfig {
         leftoverOnClose = cfg.getString("settings.leftover-on-close", "return");
         feedback = cfg.getBoolean("settings.feedback", true);
         maxPages = Math.max(1, cfg.getInt("settings.max-pages", 20));
+        guiMode = "custom".equalsIgnoreCase(cfg.getString("settings.gui-mode", "villager")) ? "custom" : "villager";
 
         messages.clear();
         if (cfg.isConfigurationSection("messages")) {

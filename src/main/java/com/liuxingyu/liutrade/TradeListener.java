@@ -1,11 +1,15 @@
 package com.liuxingyu.liutrade;
 
+import com.destroystokyo.paper.event.inventory.PrepareResultEvent;
+import io.papermc.paper.event.player.PlayerPurchaseEvent;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.MerchantInventory;
 
 /** 交易界面事件。 */
 final class TradeListener implements Listener {
@@ -85,6 +89,44 @@ final class TradeListener implements Listener {
             gui.returnInputs();
         }
         plugin.forget(gui);
+    }
+
+    // ---------------- 原生村民界面 ----------------
+
+    @EventHandler
+    public void onPrepare(PrepareResultEvent event) {
+        if (!(event.getInventory() instanceof MerchantInventory inventory)) {
+            return;
+        }
+        if (!(inventory.getMerchant() instanceof TradeMerchant merchant)) {
+            return;
+        }
+        // 用真实输入槽重算产出（转换类交易尤其需要），不匹配则清空结果。
+        event.setResult(merchant.prepareResult(inventory));
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPurchase(PlayerPurchaseEvent event) {
+        if (!(event.getMerchant() instanceof TradeMerchant merchant)) {
+            return;
+        }
+        Player player = event.getPlayer();
+        Trade trade = merchant.tradeFor(event.getTrade());
+        if (trade == null) {
+            event.setCancelled(true);
+            return;
+        }
+        Inventory top = player.getOpenInventory().getTopInventory();
+        if (top instanceof MerchantInventory inventory && !merchant.validate(inventory, event.getTrade())) {
+            event.setCancelled(true);
+            player.sendMessage(plugin.prefixed("trade-fail"));
+            return;
+        }
+        if (plugin.config().feedback) {
+            player.sendMessage(plugin.prefixed("trade-success",
+                    "%name%", Msg.color(trade.name),
+                    "%times%", "1"));
+        }
     }
 
     private static int tradeIndex(int slot) {

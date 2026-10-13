@@ -132,9 +132,18 @@ public final class LiuTrade extends JavaPlugin {
             player.sendMessage(prefixed("no-permission"));
             return;
         }
-        TradeGui gui = new TradeGui(this, player, merchant, page);
-        open.put(player.getUniqueId(), gui);
-        gui.open();
+        if ("custom".equals(config.guiMode)) {
+            TradeGui gui = new TradeGui(this, player, merchant, page);
+            open.put(player.getUniqueId(), gui);
+            gui.open();
+        } else {
+            TradeMerchant merchantGui = new TradeMerchant(this, player, merchant);
+            if (merchantGui.getRecipeCount() == 0) {
+                player.sendMessage(prefixed("no-trades"));
+                return;
+            }
+            player.openMerchant(merchantGui, true);
+        }
     }
 
     void forget(TradeGui gui) {

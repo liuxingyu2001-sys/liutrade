@@ -21,6 +21,11 @@ final class TradeService {
         return produce(player, trade, null);
     }
 
+    /** 根据真实输入物品计算单次产出（村民界面用）。 */
+    ItemStack result(Player player, Trade trade, ItemStack input) {
+        return produce(player, trade, input);
+    }
+
     /**
      * 完成 {@code times} 次交易。
      *

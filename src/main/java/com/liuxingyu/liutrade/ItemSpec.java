@@ -89,6 +89,14 @@ final class ItemSpec {
         return material != null && item.getType().name().equalsIgnoreCase(String.valueOf(material));
     }
 
+    /**
+     * 能否用原生村民界面表示：只有 {@code library_id} 或纯 {@code material} 才能唯一采样，
+     * 含 {@code pdc}/{@code name}/规则字段的输入原生界面无法按规则匹配（需自定义界面）。
+     */
+    boolean nativeRepresentable() {
+        return libraryId != null || (rule.size() == 1 && rule.containsKey("material"));
+    }
+
     String label() {
         if (libraryId != null) {
             return libraryId;

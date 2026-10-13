@@ -6,7 +6,7 @@
 
   <groupId>com.liuxingyu</groupId>
   <artifactId>LiuTrade</artifactId>
-  <version>0.1.1</version>
+  <version>0.2.0</version>
   <packaging>jar</packaging>
   <name>LiuTrade</name>
   <description>虚拟村民交易 - 读取独立 YAML，放入物品取出新物品（依赖 SoulSpace 规则/物品库）</description>
@@ -14,7 +14,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
-    <paper.version>1.21-R0.1-SNAPSHOT</paper.version>
+    <paper.version>1.21.11-R0.1-SNAPSHOT</paper.version>
   </properties>
 
   <build>

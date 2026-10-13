@@ -7,6 +7,10 @@
 config-version: 1
 
 settings:
+  # 界面模式：
+  #   villager = 原生村民交易界面（左侧交易列表 + 滚动 + 自动放入，客户端原生）
+  #   custom   = 自定义箱子界面（支持 pdc/name/not 规则匹配与分页）
+  gui-mode: villager
   # 共享配置目录：留空 = 插件自身数据目录（plugins/LiuTrade）。
   # 多台服务器可指向同一目录（如 /mc/shared/liutrade-config）实现改一处全服生效。
   shared-config-path: ''
