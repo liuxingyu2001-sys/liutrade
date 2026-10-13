@@ -6,8 +6,10 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 /** /liutrade 命令（控制台可用；open 支持为指定玩家打开）。 */
@@ -33,6 +35,9 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
         if (args.length >= 1 && args[0].equalsIgnoreCase("list")) {
             list(sender);
             return true;
+        }
+        if (args.length >= 1 && args[0].equalsIgnoreCase("item")) {
+            return item(sender);
         }
 
         String id = null;
@@ -72,6 +77,28 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
             return true;
         }
         openFor(sender, target, merchant);
+        return true;
+    }
+
+    /** 把手持物品导出为 bytes: 配置行（用于全保真自定义产出）。 */
+    private boolean item(CommandSender sender) {
+        if (!sender.hasPermission("liutrade.admin")) {
+            sender.sendMessage(plugin.prefixed("no-permission"));
+            return true;
+        }
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage(Msg.color("&c该命令只能由玩家执行。"));
+            return true;
+        }
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType().isAir()) {
+            player.sendMessage(Msg.color("&c主手没有物品。"));
+            return true;
+        }
+        String base64 = Base64.getEncoder().encodeToString(hand.serializeAsBytes());
+        player.sendMessage(Msg.color("&a把下面这行贴到交易的 outputs 里作为产出（同样已输出到控制台）："));
+        player.sendMessage(Msg.color("&f- bytes: \"" + base64 + "\""));
+        plugin.getLogger().info("[" + player.getName() + "] 主手物品导出：- bytes: \"" + base64 + "\"");
         return true;
     }
 
@@ -124,7 +151,7 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
-            for (String option : new String[]{"open", "list", "reload"}) {
+            for (String option : new String[]{"open", "list", "reload", "item"}) {
                 if (option.startsWith(args[0].toLowerCase())) {
                     out.add(option);
                 }

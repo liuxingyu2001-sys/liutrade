@@ -9,7 +9,7 @@ softdepend: [SoulSpace, Citizens]
 commands:
   liutrade:
     description: 交易商店（打开 / 列表 / 重载）
-    usage: /liutrade [open <商店> | list | reload]
+    usage: /liutrade [open <商店> [玩家] | list | reload | item]
     aliases: [lt, trade]
 permissions:
   liutrade.use:

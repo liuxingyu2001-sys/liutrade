@@ -1,6 +1,5 @@
 package com.liuxingyu.liutrade;
 
-import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.LinkedHashMap;
@@ -9,29 +8,40 @@ import java.util.Map;
 /**
  * 一条物品规格：交易输入的需求或产出。
  *
- * <p>两种写法（可混用规则字段）：
+ * <p>写法：
  * <ul>
- *   <li>{@code library_id: "ce:ns:id"} —— 经 SoulSpace {@code resolveItem} 生成，匹配用 {@link ItemStack#isSimilar};</li>
- *   <li>规则字段（{@code material}/{@code pdc}/{@code name}/{@code lore}/{@code custom_model_data}
- *       以及 {@code not_*}）—— 经 SoulSpace {@code matchesRule} 匹配，无需 SoulSpace 时退化为仅比材质。</li>
+ *   <li>{@code library_id: "ce:ns:id"} —— 经 SoulSpace {@code resolveItem} 生成（CE/MM/IE/原版材质）；</li>
+ *   <li>{@code material: PAPER} + {@code components: {...}} —— 用组件构建自定义物品（见 {@link ItemBuilder}）；</li>
+ *   <li>{@code bytes: "<base64>"} —— {@code ItemStack.serializeAsBytes()} 的全保真通道（任意物品）；</li>
+ *   <li>规则字段（{@code pdc}/{@code name}/{@code lore}/{@code custom_model_data} 及 {@code not_*}）
+ *       —— 经 SoulSpace {@code matchesRule} 匹配。</li>
  * </ul>
  * {@code amount} 表示一笔所需/产出的数量（默认 1）。
  */
 final class ItemSpec {
 
     final String libraryId;
+    final String bytes;
+    final String material;
+    final Map<String, Object> components;
     final Map<String, Object> rule;
     final int amount;
 
-    private ItemSpec(String libraryId, Map<String, Object> rule, int amount) {
+    private ItemSpec(String libraryId, String bytes, String material,
+                     Map<String, Object> components, Map<String, Object> rule, int amount) {
         this.libraryId = libraryId;
+        this.bytes = bytes;
+        this.material = material;
+        this.components = components;
         this.rule = rule;
         this.amount = Math.max(1, amount);
     }
 
     static ItemSpec parse(Object raw) {
         if (raw instanceof String s && !s.isBlank()) {
-            return new ItemSpec(null, Map.of("material", s.trim()), 1);
+            Map<String, Object> rule = new LinkedHashMap<>();
+            rule.put("material", s.trim());
+            return new ItemSpec(null, null, s.trim(), Map.of(), rule, 1);
         }
         if (!(raw instanceof Map<?, ?> map)) {
             return null;
@@ -41,35 +51,51 @@ final class ItemSpec {
         if (amountRaw instanceof Number n) {
             amount = n.intValue();
         }
-        Object lib = map.get("library_id");
+        String libraryId = blankToNull(map.get("library_id"));
+        String bytes = blankToNull(map.get("bytes"));
+        if (bytes == null) {
+            bytes = blankToNull(map.get("base64"));
+        }
+        Map<String, Object> components = ItemBuilder.asMap(map.get("components"));
+        if (components == null) {
+            components = Map.of();
+        }
         Map<String, Object> rule = new LinkedHashMap<>();
-        for (Map.Entry<?, ?> e : map.entrySet()) {
-            String key = String.valueOf(e.getKey());
-            if (key.equals("amount") || key.equals("library_id")) {
+        String material = null;
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            String key = String.valueOf(entry.getKey());
+            if (key.equals("amount") || key.equals("library_id") || key.equals("bytes")
+                    || key.equals("base64") || key.equals("components")) {
                 continue;
             }
-            rule.put(key, e.getValue());
+            rule.put(key, entry.getValue());
+            if (key.equals("material")) {
+                material = String.valueOf(entry.getValue()).trim();
+            }
         }
-        if (lib != null && !String.valueOf(lib).isBlank()) {
-            return new ItemSpec(String.valueOf(lib).trim(), null, amount);
-        }
-        if (rule.isEmpty()) {
+        if (libraryId == null && bytes == null && material == null && rule.isEmpty()) {
             return null;
         }
-        return new ItemSpec(null, rule, amount);
+        return new ItemSpec(libraryId, bytes, material, components, rule, amount);
     }
 
-    /** 生成展示用样品（数量 1）；无法解析时返回 null。 */
+    /** 生成展示/构建用样品（数量 1）；无法解析时返回 null。 */
     ItemStack sample(SoulSpaceHook ss) {
-        if (libraryId != null) {
-            return ss.resolveItem(libraryId).map(ItemStack::clone).orElse(null);
-        }
-        Object material = rule.get("material");
-        if (material != null) {
-            Material m = Material.matchMaterial(String.valueOf(material));
-            if (m != null && !m.isAir()) {
-                return new ItemStack(m);
+        if (bytes != null) {
+            ItemStack fromBytes = ItemBuilder.fromBytes(bytes);
+            if (fromBytes != null) {
+                return fromBytes;
             }
+        }
+        if (libraryId != null) {
+            ItemStack resolved = ss.resolveItem(libraryId).orElse(null);
+            if (resolved != null) {
+                return resolved;
+            }
+            return null;
+        }
+        if (material != null) {
+            return ItemBuilder.build(material, components);
         }
         return null;
     }
@@ -78,33 +104,50 @@ final class ItemSpec {
         if (item == null || item.getType().isAir()) {
             return false;
         }
-        if (libraryId != null) {
-            ItemStack sample = ss.resolveItem(libraryId).orElse(null);
+        boolean exact = libraryId != null || bytes != null || (material != null && !components.isEmpty());
+        if (exact) {
+            ItemStack sample = sample(ss);
             return sample != null && item.isSimilar(sample);
         }
-        if (ss.canMatchRules()) {
+        if (ss.canMatchRules() && !rule.isEmpty()) {
             return ss.matchesRule(rule, item);
         }
-        Object material = rule.get("material");
-        return material != null && item.getType().name().equalsIgnoreCase(String.valueOf(material));
+        if (material != null) {
+            return item.getType().name().equalsIgnoreCase(material);
+        }
+        return false;
     }
 
     /**
-     * 能否用原生村民界面表示：只有 {@code library_id} 或纯 {@code material} 才能唯一采样，
-     * 含 {@code pdc}/{@code name}/规则字段的输入原生界面无法按规则匹配（需自定义界面）。
+     * 能否用原生村民界面表示：需要能唯一采样（{@code library_id}/{@code bytes}/
+     * {@code material + components}），或规则只有 {@code material}。
+     * 只有 {@code pdc}/{@code name} 等无法采样的字段时，原生界面无法按规则匹配（需自定义界面）。
      */
     boolean nativeRepresentable() {
-        return libraryId != null || (rule.size() == 1 && rule.containsKey("material"));
+        if (libraryId != null || bytes != null || !components.isEmpty()) {
+            return true;
+        }
+        return rule.size() == 1 && rule.containsKey("material");
     }
 
     String label() {
         if (libraryId != null) {
             return libraryId;
         }
-        Object material = rule.get("material");
+        if (bytes != null) {
+            return "bytes:" + bytes.substring(0, Math.min(8, bytes.length())) + "...";
+        }
         if (material != null) {
-            return String.valueOf(material);
+            return material;
         }
         return String.join(",", rule.keySet());
+    }
+
+    private static String blankToNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 }

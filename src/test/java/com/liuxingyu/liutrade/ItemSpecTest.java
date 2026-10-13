@@ -7,6 +7,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ItemSpecTest {
 
@@ -15,7 +16,7 @@ class ItemSpecTest {
         ItemSpec spec = ItemSpec.parse(Map.of("library_id", "ce:ns:id", "amount", 3));
         assertEquals("ce:ns:id", spec.libraryId);
         assertEquals(3, spec.amount);
-        assertNull(spec.rule);
+        assertTrue(spec.rule.isEmpty());
     }
 
     @Test
@@ -40,5 +41,19 @@ class ItemSpecTest {
     void rejectsEmptySpec() {
         assertNull(ItemSpec.parse(Map.of("amount", 2)));
         assertNull(ItemSpec.parse(""));
+    }
+
+    @Test
+    void componentsBecomeExactItem() {
+        ItemSpec spec = ItemSpec.parse(Map.of("material", "PAPER", "components", Map.of("custom_model_data", 7)));
+        assertEquals("PAPER", spec.material);
+        assertEquals(7, spec.components.get("custom_model_data"));
+        assertTrue(spec.nativeRepresentable());
+    }
+
+    @Test
+    void pdcRuleIsNotNativeRepresentable() {
+        ItemSpec spec = ItemSpec.parse(Map.of("material", "PAPER", "pdc", "jiu:jiu"));
+        assertFalse(spec.nativeRepresentable());
     }
 }

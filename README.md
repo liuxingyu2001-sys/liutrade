@@ -30,6 +30,7 @@
 | `/liutrade open <商店> [玩家]` | 打开指定商店；`[玩家]` = 为某玩家打开（控制台必须指定，玩家为他人打开需 `liutrade.admin`） |
 | `/liutrade list` | 列出全部商店（控制台可用） |
 | `/liutrade reload` | 重载全部商店配置（控制台可用） |
+| `/liutrade item` | 把手持物品导出成 `bytes:` 配置行（控制台也会打印，便于复制） |
 
 `<商店>` = 文件相对路径去掉 `.yml`（例如 `blacksmith`、`子目录/xxx`）。
 
@@ -83,17 +84,26 @@ trades:
 
 | 写法 | 例子 | 匹配/生成方式 |
 | --- | --- | --- |
-| 原版材质 | `material: DIAMOND` | 按材质匹配 |
-| 物品库 | `library_id: "ce:ns:id"` | 经 SoulSpace `resolveItem` 生成，按 `isSimilar` 匹配 |
+| 原版材质 | `material: DIAMOND` | 按材质生成/匹配 |
+| 物品库（CE/MM/IE/原版） | `library_id: "ce:ns:id"` | 经 SoulSpace `resolveItem` 生成，按 `isSimilar` 匹配 |
+| 材质 + 组件 | `material: PAPER` + `components: {...}` | 用组件构建自定义物品，按 `isSimilar` 匹配 |
+| 全保真 | `bytes: "<Base64>"` | `ItemStack.serializeAsBytes()`，任意物品/组件原样还原 |
 | 规则字段 | `material: PAPER` + `pdc: jiu:jiu` | 经 SoulSpace `matchesRule` 匹配（支持 `not_pdc` 等否定） |
 | 数量 | `amount: 8` | 一笔所需/产出数量，默认 1 |
 
-规则字段与 SoulSpace 分类/黑名单/转换规则一致，单条内所有字段是「且」，`not_*` 一票否决。
+**`components`** 键可带或不带 `minecraft:` 前缀：`custom_name` / `item_name` / `lore` /
+`custom_model_data` / `enchantments`(或 `stored_enchantments`) / `unbreakable` / `rarity` /
+`max_stack_size` / `fire_resistant` / `hide_tooltip` / `enchantment_glint_override` / `damage` /
+`dyed_color`，以及 `custom_data`（嵌套 map 或 SNBT 字符串，写入 PDC，可被 SoulSpace 的 `pdc` 规则匹配）。
+
+> 要产出 **CraftEngine / MythicMobs / ItemEdit** 物品，用 `library_id: "ce:..."`。
+> 其它任意组件（无法用 `components` 表达的），主手持物品执行 `/liutrade item`，把输出的
+> `bytes: "..."` 贴到产出入即可原样还原。
 
 ### 产出
 
 - `convert: true`：产出由 SoulSpace 的 `convert/*.yml` 转换规则决定（**仅支持单输入**）。
-- `outputs:`：显式列出产出（`material` 或经 SoulSpace 解析的 `library_id`）。
+- `outputs:`：显式列出产出（`material` / `material`+`components` / `library_id` / `bytes`）。
 
 ## 界面
 
