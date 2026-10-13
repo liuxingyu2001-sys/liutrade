@@ -5,6 +5,7 @@ import org.bukkit.entity.Entity;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.plugin.Plugin;
 
@@ -72,6 +73,11 @@ final class CitizensHook implements Listener {
             event.setCancelled(true);
             plugin.openMerchant(event.getPlayer(), merchant, 0);
         }
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        lastOpen.remove(event.getPlayer().getUniqueId());
     }
 
     private Merchant lookup(Entity entity) {

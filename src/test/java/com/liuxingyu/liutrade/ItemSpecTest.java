@@ -84,4 +84,13 @@ class ItemSpecTest {
         assertEquals("DIAMOND", spec.rule.get("material"));
         assertEquals("SHULKER_*", ItemSpec.parse(Map.of("material", "shulker_*")).material);
     }
+
+    @Test
+    void ruleFieldsRequireSoulSpaceRules() {
+        // 除 material 外的规则字段（pdc/name/not_* 等）必须依赖 SoulSpace 匹配。
+        assertTrue(ItemSpec.parse(Map.of("material", "PAPER", "pdc", "jiu:jiu")).requiresRules());
+        assertTrue(ItemSpec.parse(Map.of("material", "PAPER", "not_pdc", "soulbound")).requiresRules());
+        assertFalse(ItemSpec.parse("PAPER").requiresRules());
+        assertFalse(ItemSpec.parse(Map.of("material", "DIAMOND", "amount", 3)).requiresRules());
+    }
 }

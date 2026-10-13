@@ -35,7 +35,11 @@ final class TradeConfig {
     }
 
     String msg(String key, String... replacements) {
-        String raw = messages.getOrDefault(key, key);
+        String raw = messages.get(key);
+        if (raw == null) {
+            // 键缺失或值为 null（例如被写成配置节）时，退回键名而不是发一条空消息。
+            raw = key;
+        }
         String text = Msg.color(raw);
         for (int i = 0; i + 1 < replacements.length; i += 2) {
             text = text.replace(replacements[i], replacements[i + 1]);

@@ -8,6 +8,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.MerchantInventory;
 
@@ -40,7 +41,7 @@ final class TradeListener implements Listener {
         }
         int slot = event.getRawSlot();
         if (gui.isActiveInput(slot)) {
-            plugin.getServer().getScheduler().runTask(plugin, gui::render);
+            Sched.runForPlayer(plugin, player, gui::render);
             return;
         }
         event.setCancelled(true);
@@ -74,7 +75,17 @@ final class TradeListener implements Listener {
                 return;
             }
         }
-        plugin.getServer().getScheduler().runTask(plugin, gui::render);
+        if (event.getWhoClicked() instanceof Player player) {
+            Sched.runForPlayer(plugin, player, gui::render);
+        } else {
+            gui.render();
+        }
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        // 清理会话引用，避免离线玩家在 nativeSessions / open / CitizensHook 中泄漏。
+        plugin.forgetPlayer(event.getPlayer());
     }
 
     @EventHandler

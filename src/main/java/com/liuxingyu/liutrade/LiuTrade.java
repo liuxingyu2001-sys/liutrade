@@ -54,7 +54,7 @@ public final class LiuTrade extends JavaPlugin {
         getLogger().info("界面模式：" + config.guiMode + ("custom".equals(config.guiMode) ? "（自定义箱子界面）" : "（原生村民界面）"));
         if (config.autoReload) {
             long period = config.pollIntervalTicks;
-            Bukkit.getScheduler().runTaskTimer(this, this::poll, period, period);
+            Sched.runGlobalTimer(this, this::poll, period, period);
         }
         getLogger().info("LiuTrade 已启用。");
     }
@@ -71,6 +71,7 @@ public final class LiuTrade extends JavaPlugin {
             }
         }
         open.clear();
+        nativeSessions.clear();
     }
 
     private void copyExample() {
@@ -135,6 +136,8 @@ public final class LiuTrade extends JavaPlugin {
                 }
             }
         }
+        // 排序：listFiles() 的返回顺序不保证稳定，否则指纹会无端变化导致每轮都重载。
+        out.sort(java.util.Comparator.comparing(File::getAbsolutePath));
         return out;
     }
 
@@ -184,6 +187,12 @@ public final class LiuTrade extends JavaPlugin {
 
     void forget(TradeGui gui) {
         open.remove(gui.player().getUniqueId(), gui);
+    }
+
+    /** 玩家退出时清理所有会话引用。 */
+    void forgetPlayer(Player player) {
+        open.remove(player.getUniqueId());
+        nativeSessions.values().removeIf(session -> session.player().equals(player));
     }
 
     // ---------------- 访问器 ----------------

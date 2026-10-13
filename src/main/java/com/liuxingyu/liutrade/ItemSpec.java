@@ -145,12 +145,27 @@ final class ItemSpec {
             ItemStack sample = sample(ss);
             return sample != null && item.isSimilar(sample);
         }
-        if (ss.canMatchRules() && !rule.isEmpty()) {
+        if (ss != null && ss.canMatchRules() && !rule.isEmpty()) {
             return ss.matchesRule(rule, item);
+        }
+        // 需要规则字段（pdc/name/lore/custom_model_data/not_*）但 SoulSpace 不可用时，
+        // 必须失败关闭：否则只按材质匹配会让任意同材质物品绕过规则（如普通纸冒充票券）。
+        if (requiresRules()) {
+            return false;
         }
         if (material != null) {
             Material type = Materials.resolve(material);
             return type != null && item.getType() == type;
+        }
+        return false;
+    }
+
+    /** 是否依赖 SoulSpace 规则匹配（除 material 外还有其它规则字段）。 */
+    boolean requiresRules() {
+        for (String key : rule.keySet()) {
+            if (!key.equals("material")) {
+                return true;
+            }
         }
         return false;
     }

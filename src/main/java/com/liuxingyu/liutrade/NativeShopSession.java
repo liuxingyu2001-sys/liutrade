@@ -93,6 +93,10 @@ final class NativeShopSession {
         return handle;
     }
 
+    Player player() {
+        return player;
+    }
+
     int size() {
         return trades.size();
     }

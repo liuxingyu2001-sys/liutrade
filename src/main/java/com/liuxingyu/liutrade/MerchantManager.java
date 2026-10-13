@@ -121,6 +121,13 @@ final class MerchantManager {
             warn("交易 " + id + " 的 inputs 必须为 1~" + Trade.MAX_INPUTS + " 项，已跳过。");
             return null;
         }
+        for (ItemSpec input : inputs) {
+            // 输入全部放在一个槽位，超过原版单槽上限（64）永远无法凑齐，提前提醒管理员。
+            if (input.amount > 64) {
+                warn("交易 " + id + " 的输入数量 " + input.amount
+                        + " 超过单槽上限 64，将永远无法完成，请拆成多笔或减小数量。");
+            }
+        }
         boolean convert = booleanValue(section.get("convert"), outputs.isEmpty());
         if (convert && inputs.size() > 1) {
             warn("交易 " + id + " 使用 convert 时必须只有 1 个输入，已跳过。");

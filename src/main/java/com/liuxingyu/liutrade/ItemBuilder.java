@@ -158,8 +158,13 @@ final class ItemBuilder {
         if (map == null || map.isEmpty()) {
             return;
         }
-        PersistentDataContainer container = meta.getPersistentDataContainer();
-        write(container, map);
+        try {
+            PersistentDataContainer container = meta.getPersistentDataContainer();
+            write(container, map);
+        } catch (Throwable t) {
+            // 键名非法等异常不应把整个界面渲染/点击事件拖下水。
+            LOGGER.warning("写入 custom_data 失败（已忽略）：" + t);
+        }
     }
 
     private static void write(PersistentDataContainer container, Map<String, Object> map) {
@@ -200,10 +205,15 @@ final class ItemBuilder {
         if (text.isEmpty()) {
             return null;
         }
-        if (text.contains(":")) {
-            return NamespacedKey.fromString(text.toLowerCase(Locale.ROOT));
+        try {
+            if (text.contains(":")) {
+                return NamespacedKey.fromString(text.toLowerCase(Locale.ROOT));
+            }
+            return new NamespacedKey("liutrade", text.toLowerCase(Locale.ROOT));
+        } catch (Throwable t) {
+            LOGGER.warning("非法的 custom_data 键名：" + raw + "（已跳过）");
+            return null;
         }
-        return new NamespacedKey("liutrade", text.toLowerCase(Locale.ROOT));
     }
 
     private static String normalize(String key) {
