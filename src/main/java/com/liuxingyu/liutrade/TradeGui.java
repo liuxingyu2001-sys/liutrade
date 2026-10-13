@@ -16,32 +16,39 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 自定义交易界面（54 格），布局尽量直白：
+ * 自定义交易界面（54 格），稀疏布局，玻璃板做边框与分隔：
  * <pre>
- *   第 1 行：[商店图标] [怎么用]
- *   第 2~4 行：交易列表（9 列 x 3 行 = 每页 27 笔，左键自动放入所需物品）
- *   第 5 行：[输入1][输入2][输入3]...  → [产出]   （输入数量按商店实际需要显示，最多 7 个）
- *   第 6 行：[上一页]        [关闭]        [下一页]
+ *   第 1 行：  · [上一页] · [关闭] · [怎么用] · [下一页] ·
+ *   第 2~4 行：· [交易] · [交易] · [交易] · [交易] ·       （每页 12 笔，每笔之间玻璃板隔开）
+ *   第 5~6 行：· [输入1] · [输入2] · … · [→] · [产出] ·   （输入数量按需显示，最多 6 个）
  * </pre>
  * 输入槽是真实槽位：玩家把物品放进去，产出槽实时显示能换到什么，点产出槽完成交易。
  */
 final class TradeGui implements InventoryHolder {
 
-    /** 交易列表：第 2~4 行（9 列 x 3 行 = 27）。 */
+    /** 交易列表：第 2~4 行的第 1/3/5/7 列（每行 4 笔，共 12 笔，之间是玻璃板）。 */
     static final int[] TRADE_SLOTS = {
-            9, 10, 11, 12, 13, 14, 15, 16, 17,
-            18, 19, 20, 21, 22, 23, 24, 25, 26,
-            27, 28, 29, 30, 31, 32, 33, 34, 35
+            10, 12, 14, 16,
+            19, 21, 23, 25,
+            28, 30, 32, 34
     };
-    /** 输入槽：第 5 行左侧（最多 {@link Trade#MAX_INPUTS} 个，按商店实际需要显示）。 */
-    static final int[] INPUT_SLOTS = {36, 37, 38, 39, 40, 41, 42};
-    static final int SLOT_ICON = 0;
-    static final int SLOT_HELP = 4;
-    static final int SLOT_ARROW = 43;
-    static final int SLOT_OUT = 44;
-    static final int SLOT_PREV = 45;
-    static final int SLOT_CLOSE = 49;
-    static final int SLOT_NEXT = 53;
+    /** 输入槽：第 5~6 行的第 1/3/5/7 列（最多 {@link Trade#MAX_INPUTS} 个，按商店实际需要显示）。 */
+    static final int[] INPUT_SLOTS = {37, 39, 41, 43, 46, 48};
+    /** 玻璃板边框/分隔。 */
+    private static final int[] FILLER_SLOTS = {
+            0, 2, 4, 6, 8,
+            9, 11, 13, 15, 17,
+            18, 20, 22, 24, 26,
+            27, 29, 31, 33, 35,
+            36, 38, 40, 42, 44,
+            45, 47, 49, 51, 53
+    };
+    static final int SLOT_PREV = 1;
+    static final int SLOT_CLOSE = 3;
+    static final int SLOT_HELP = 5;
+    static final int SLOT_NEXT = 7;
+    static final int SLOT_ARROW = 50;
+    static final int SLOT_OUT = 52;
 
     private final LiuTrade plugin;
     private final Player player;
@@ -120,14 +127,12 @@ final class TradeGui implements InventoryHolder {
     // ---------------- 渲染 ----------------
 
     void render() {
-        // 整屏重画（活动输入槽除外，里面是玩家真实物品）
+        // 先清屏：活动输入槽保留玩家真实物品，其余先清空（隐藏输入槽里的东西退回玩家）
         for (int slot = 0; slot < 54; slot++) {
             if (isActiveInput(slot)) {
                 continue;
             }
-            int hidden = inputIndex(slot);
-            if (hidden >= 0) {
-                // 本商店不需要的输入槽：里面的东西退回玩家
+            if (inputIndex(slot) >= 0) {
                 ItemStack stray = inventory.getItem(slot);
                 if (stray != null && !stray.getType().isAir()) {
                     giveOrDrop(player, stray);
@@ -135,7 +140,15 @@ final class TradeGui implements InventoryHolder {
             }
             inventory.setItem(slot, null);
         }
-        inventory.setItem(SLOT_ICON, shopIcon());
+        // 玻璃板边框与分隔
+        for (int slot : FILLER_SLOTS) {
+            inventory.setItem(slot, filler());
+        }
+        // 用不到的输入槽也用玻璃板占位，保持整齐
+        int inputs = inputCount();
+        for (int i = inputs; i < INPUT_SLOTS.length; i++) {
+            inventory.setItem(INPUT_SLOTS[i], filler());
+        }
         inventory.setItem(SLOT_HELP, help());
         inventory.setItem(SLOT_ARROW, button(Material.ARROW, "&7→ &f产出", null));
         inventory.setItem(SLOT_OUT, outputIcon());
@@ -157,34 +170,23 @@ final class TradeGui implements InventoryHolder {
         }
     }
 
-    /** 顶部左侧的商店标识。 */
-    private ItemStack shopIcon() {
-        ItemStack sample = merchant.icon == null ? null : merchant.icon.iconSample(plugin.soulSpace());
-        ItemStack item = sample != null ? sample.clone() : new ItemStack(Material.EMERALD);
-        item.setAmount(1);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.setDisplayName(Msg.color("&6" + merchant.displayName()));
-            meta.setLore(List.of(
-                    Msg.color("&7共 &f" + merchant.trades.size() + " &7种交易"),
-                    Msg.color("&7第 &f" + (page + 1) + " &7/ &f" + pageCount() + " &7页")));
-            item.setItemMeta(meta);
-        }
-        return item;
+    private ItemStack filler() {
+        return button(Material.BLACK_STAINED_GLASS_PANE, " ", null);
     }
 
-    /** 顶部「怎么用」说明书。 */
+    /** 顶部「怎么用」说明书（也带商店名与页码）。 */
     private ItemStack help() {
         ItemStack item = new ItemStack(Material.BOOK);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(Msg.color("&e&l怎么用"));
+            meta.setDisplayName(Msg.color("&e&l" + merchant.displayName() + " &7· 怎么用"));
             meta.setLore(List.of(
-                    Msg.color("&7① &f左键 &7下方任意交易：自动放入所需物品"),
-                    Msg.color("&7② 也可以自己把物品放进下面一行的输入槽"),
-                    Msg.color("&7③ 右侧 &f产出格 &7出现物品后，&f左键 &7即可交易"),
+                    Msg.color("&8第 " + (page + 1) + " / " + pageCount() + " 页 · 共 " + merchant.trades.size() + " 种交易"),
+                    Msg.color("&7① &f左键 &7任意交易：自动放入所需物品"),
+                    Msg.color("&7② 也可以自己把物品放进下面的输入槽"),
+                    Msg.color("&7③ &f产出格 &7出现物品后，&f左键 &7即可交易"),
                     Msg.color("&7④ &fShift+左键 &7产出格：一次交易全部"),
-                    Msg.color("&7⑤ 下方 &f箭头 &7翻页")));
+                    Msg.color("&7⑤ 左右 &f箭头 &7翻页")));
             item.setItemMeta(meta);
         }
         return item;
@@ -197,12 +199,12 @@ final class TradeGui implements InventoryHolder {
         if (trade == null) {
             if (empty) {
                 return button(Material.GRAY_STAINED_GLASS_PANE, "&7产出",
-                        List.of(Msg.color("&7把物品放进左边一行的输入槽"),
+                        List.of(Msg.color("&7把物品放进左边的输入槽"),
                                 Msg.color("&7或左键下方交易自动放入")));
             }
             return button(Material.BARRIER, "&c没有匹配的交易",
                     List.of(Msg.color("&7这些物品换不到东西"),
-                            Msg.color("&7请对照下方交易的需求")));
+                            Msg.color("&7请对照交易的「需要」")));
         }
         int batches = batches(trade);
         List<ItemStack> previews = previews(trade);
@@ -264,7 +266,7 @@ final class TradeGui implements InventoryHolder {
         int batches = batches(trade);
         lore.add("");
         lore.add(Msg.color(batches > 0 ? "&7你当前可交易 &a" + batches + " &7次" : "&c物品不足"));
-        lore.add(Msg.color("&e左键：自动放入所需物品"));
+        lore.add(Msg.color("&e左键：自动放入所有可用物品"));
         if (first != null && !first.nativeRepresentable()) {
             lore.add(Msg.color("&8（按规则匹配）"));
         }
@@ -369,7 +371,7 @@ final class TradeGui implements InventoryHolder {
         return true;
     }
 
-    /** 从玩家背包取出该交易一批所需物品，放入输入槽。 */
+    /** 左键交易时自动放入物品。 */
     void autoFill(Trade trade) {
         autoFill(trade, 1);
     }

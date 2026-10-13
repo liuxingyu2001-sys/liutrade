@@ -6,7 +6,7 @@ import java.util.List;
 final class Trade {
 
     /** 自定义界面一屏输入槽上限（原生村民界面只能 2 个）。 */
-    static final int MAX_INPUTS = 7;
+    static final int MAX_INPUTS = 6;
 
     final String id;
     String name;
