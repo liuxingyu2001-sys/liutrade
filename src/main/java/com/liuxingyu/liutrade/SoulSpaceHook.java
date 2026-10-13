@@ -35,6 +35,11 @@ final class SoulSpaceHook {
         return api != null;
     }
 
+    /** SoulSpace 是否提供规则匹配（2.5.0+）。 */
+    boolean canMatchRules() {
+        return api != null && mMatches != null;
+    }
+
     /** 连接 SoulSpace；成功返回 true。可重复调用。 */
     boolean connect() {
         if (api != null) {
@@ -49,22 +54,29 @@ final class SoulSpaceHook {
         }
         try {
             Class<?> apiClass = Class.forName("com.soulspace.api.SoulSpaceApi");
-            Method resolve = apiClass.getMethod("resolveItem", String.class);
-            Method matches = apiClass.getMethod("matchesRule", Map.class, ItemStack.class);
             Method conversion = apiClass.getMethod("conversion");
             Class<?> conversionClass = Class.forName("com.soulspace.api.ItemConversion");
             Method convert = conversionClass.getMethod("convert", UUID.class, ItemStack.class);
             Method hasRule = conversionClass.getMethod("hasRule", ItemStack.class);
-            this.mResolve = resolve;
-            this.mMatches = matches;
             this.mConversion = conversion;
             this.mConvert = convert;
             this.mHasRule = hasRule;
+            // 2.5.0 新增；旧版没有则仅影响 library_id / 规则匹配。
+            this.mResolve = tryMethod(apiClass, "resolveItem", String.class);
+            this.mMatches = tryMethod(apiClass, "matchesRule", Map.class, ItemStack.class);
             this.api = provider;
             return true;
         } catch (Throwable t) {
-            plugin.getLogger().warning("连接 SoulSpace API 失败：" + t);
+            plugin.getLogger().warning("连接 SoulSpace API 失败（需 SoulSpace 2.4.9+）：" + t);
             return false;
+        }
+    }
+
+    private static Method tryMethod(Class<?> type, String name, Class<?>... params) {
+        try {
+            return type.getMethod(name, params);
+        } catch (NoSuchMethodException e) {
+            return null;
         }
     }
 

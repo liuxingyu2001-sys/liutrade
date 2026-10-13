@@ -82,7 +82,7 @@ final class ItemSpec {
             ItemStack sample = ss.resolveItem(libraryId).orElse(null);
             return sample != null && item.isSimilar(sample);
         }
-        if (ss.available()) {
+        if (ss.canMatchRules()) {
             return ss.matchesRule(rule, item);
         }
         Object material = rule.get("material");
