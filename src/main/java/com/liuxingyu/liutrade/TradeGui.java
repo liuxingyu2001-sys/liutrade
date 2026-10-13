@@ -44,6 +44,10 @@ final class TradeGui implements InventoryHolder {
     private final int page;
     private Inventory inventory;
     private int selected = -1;
+    // 会话内缓存：CE 物品解析、产出预览只算一次（render 频繁发生时避免重复解析）。
+    private final Map<Integer, ItemStack> iconCache = new java.util.HashMap<>();
+    private final Map<Integer, List<ItemStack>> previewCache = new java.util.HashMap<>();
+    private final Map<ItemSpec, String> specNameCache = new java.util.IdentityHashMap<>();
 
     TradeGui(LiuTrade plugin, Player player, Merchant merchant, int page) {
         this.plugin = plugin;
@@ -142,7 +146,7 @@ final class TradeGui implements InventoryHolder {
         if (batches <= 0) {
             return button(Material.BARRIER, "&c无法完成交易", "&7物品数量不足");
         }
-        List<ItemStack> previews = plugin.service().previewAll(player, trade);
+        List<ItemStack> previews = previews(trade);
         if (previews.isEmpty()) {
             return button(Material.BARRIER, "&c无法完成交易", "&7物品数量不足，或转换规则未命中");
         }
@@ -169,11 +173,7 @@ final class TradeGui implements InventoryHolder {
 
     private ItemStack tradeIcon(Trade trade, int index) {
         ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
-        ItemStack sample = first == null ? null : first.iconSample(plugin.soulSpace());
-        ItemStack fallback = merchant.icon == null ? null : merchant.icon.iconSample(plugin.soulSpace());
-        ItemStack icon = sample != null ? sample.clone()
-                : (fallback != null ? fallback.clone() : new ItemStack(Material.CHEST));
-        icon.setAmount(1);
+        ItemStack icon = baseIcon(trade, index).clone();
         ItemMeta meta = icon.getItemMeta();
         if (meta == null) {
             return icon;
@@ -192,10 +192,10 @@ final class TradeGui implements InventoryHolder {
             lore.add(Msg.color("&7需求："));
         }
         for (ItemSpec input : trade.inputs) {
-            lore.add(Msg.color("  &8- &f" + plugin.specName(input) + " &7x" + input.amount));
+            lore.add(Msg.color("  &8- &f" + specName(input) + " &7x" + input.amount));
         }
         lore.add(Msg.color("&7产出："));
-        List<ItemStack> previews = plugin.service().previewAll(player, trade);
+        List<ItemStack> previews = previews(trade);
         if (!previews.isEmpty()) {
             for (ItemStack pv : previews) {
                 lore.add(Msg.color("  &8- &f" + plugin.itemName(pv) + " &7x" + pv.getAmount()
@@ -217,6 +217,46 @@ final class TradeGui implements InventoryHolder {
         }
         icon.setItemMeta(meta);
         return icon;
+    }
+
+    /** 交易列表图标底物（缓存）：输入[0]的显示样品 → 商店图标 → 箱子。 */
+    private ItemStack baseIcon(Trade trade, int index) {
+        ItemStack cached = iconCache.get(index);
+        if (cached != null) {
+            return cached;
+        }
+        ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
+        ItemStack sample = first == null ? null : first.iconSample(plugin.soulSpace());
+        if (sample == null && merchant.icon != null) {
+            sample = merchant.icon.iconSample(plugin.soulSpace());
+        }
+        ItemStack icon = sample != null ? sample.clone() : new ItemStack(Material.CHEST);
+        icon.setAmount(1);
+        iconCache.put(index, icon);
+        return icon;
+    }
+
+    /** 产出预览（缓存，避免每次 render 重复跑转换规则）。 */
+    private List<ItemStack> previews(Trade trade) {
+        int index = merchant.trades.indexOf(trade);
+        if (index < 0) {
+            return plugin.service().previewAll(player, trade);
+        }
+        return previewCache.computeIfAbsent(index, k -> plugin.service().previewAll(player, trade));
+    }
+
+    /** 物品规格显示名（缓存，避免重复解析 CE 物品）。 */
+    private String specName(ItemSpec spec) {
+        if (spec == null) {
+            return "?";
+        }
+        String cached = specNameCache.get(spec);
+        if (cached != null) {
+            return cached;
+        }
+        String name = plugin.specName(spec);
+        specNameCache.put(spec, name);
+        return name;
     }
 
     private ItemStack filler() {
