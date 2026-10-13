@@ -10,6 +10,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -19,6 +20,7 @@ public final class LiuTrade extends JavaPlugin {
 
     private final TradeConfig config = new TradeConfig();
     private final Map<UUID, TradeGui> open = new HashMap<>();
+    private final Map<org.bukkit.inventory.Merchant, NativeShopSession> nativeSessions = new IdentityHashMap<>();
     private MerchantManager manager;
     private SoulSpaceHook soulSpace;
     private TradeService service;
@@ -137,12 +139,32 @@ public final class LiuTrade extends JavaPlugin {
             open.put(player.getUniqueId(), gui);
             gui.open();
         } else {
-            TradeMerchant merchantGui = new TradeMerchant(this, player, merchant);
-            if (merchantGui.getRecipeCount() == 0) {
+            NativeShopSession session;
+            try {
+                session = NativeShopSession.create(this, player, merchant);
+            } catch (Throwable t) {
+                getLogger().warning("打开原生村民界面失败，回退到自定义界面：" + t);
+                TradeGui gui = new TradeGui(this, player, merchant, page);
+                open.put(player.getUniqueId(), gui);
+                gui.open();
+                return;
+            }
+            if (session.size() == 0) {
                 player.sendMessage(prefixed("no-trades"));
                 return;
             }
-            player.openMerchant(merchantGui, true);
+            nativeSessions.put(session.handle(), session);
+            player.openMerchant(session.handle(), true);
+        }
+    }
+
+    NativeShopSession nativeSession(org.bukkit.inventory.Merchant handle) {
+        return handle == null ? null : nativeSessions.get(handle);
+    }
+
+    void forgetNative(org.bukkit.inventory.Merchant handle) {
+        if (handle != null) {
+            nativeSessions.remove(handle);
         }
     }
 

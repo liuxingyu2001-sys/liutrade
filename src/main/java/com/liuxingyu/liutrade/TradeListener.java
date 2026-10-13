@@ -79,6 +79,9 @@ final class TradeListener implements Listener {
 
     @EventHandler
     public void onClose(InventoryCloseEvent event) {
+        if (event.getInventory() instanceof MerchantInventory merchantInventory) {
+            plugin.forgetNative(merchantInventory.getMerchant());
+        }
         if (!(event.getInventory().getHolder() instanceof TradeGui gui)) {
             return;
         }
@@ -98,31 +101,32 @@ final class TradeListener implements Listener {
         if (!(event.getInventory() instanceof MerchantInventory inventory)) {
             return;
         }
-        if (!(inventory.getMerchant() instanceof TradeMerchant merchant)) {
+        NativeShopSession session = plugin.nativeSession(inventory.getMerchant());
+        if (session == null) {
             return;
         }
         // 用真实输入槽重算产出（转换类交易尤其需要），不匹配则清空结果。
-        event.setResult(merchant.prepareResult(inventory));
+        event.setResult(session.prepareResult(inventory));
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onPurchase(PlayerPurchaseEvent event) {
-        if (!(event.getMerchant() instanceof TradeMerchant merchant)) {
+        NativeShopSession session = plugin.nativeSession(event.getMerchant());
+        if (session == null) {
             return;
         }
         Player player = event.getPlayer();
-        Trade trade = merchant.tradeFor(event.getTrade());
-        if (trade == null) {
-            event.setCancelled(true);
+        Inventory top = player.getOpenInventory().getTopInventory();
+        if (!(top instanceof MerchantInventory inventory)) {
             return;
         }
-        Inventory top = player.getOpenInventory().getTopInventory();
-        if (top instanceof MerchantInventory inventory && !merchant.validate(inventory, event.getTrade())) {
+        if (!session.validate(inventory)) {
             event.setCancelled(true);
             player.sendMessage(plugin.prefixed("trade-fail"));
             return;
         }
-        if (plugin.config().feedback) {
+        Trade trade = session.tradeAt(inventory.getSelectedRecipeIndex());
+        if (trade != null && plugin.config().feedback) {
             player.sendMessage(plugin.prefixed("trade-success",
                     "%name%", Msg.color(trade.name),
                     "%times%", "1"));

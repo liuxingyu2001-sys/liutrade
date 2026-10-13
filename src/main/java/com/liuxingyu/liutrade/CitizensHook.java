@@ -9,6 +9,9 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.plugin.Plugin;
 
 import java.lang.reflect.Method;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 /**
  * Citizens 软依赖：玩家右键 NPC 时按 {@code npc} 绑定打开对应商店。
@@ -22,6 +25,7 @@ final class CitizensHook implements Listener {
     private Method getId;
     private Method getName;
     private boolean ready;
+    private final Map<UUID, Long> lastOpen = new HashMap<>();
 
     CitizensHook(LiuTrade plugin) {
         this.plugin = plugin;
@@ -57,6 +61,14 @@ final class CitizensHook implements Listener {
         }
         Merchant merchant = lookup(event.getRightClicked());
         if (merchant != null) {
+            // 右键实体会先后触发 PlayerInteractAtEntityEvent 与 PlayerInteractEntityEvent，
+            // 两个都属于本监听（子类关系），这里做短时间去重。
+            long now = System.currentTimeMillis();
+            Long last = lastOpen.get(event.getPlayer().getUniqueId());
+            if (last != null && now - last < 300) {
+                return;
+            }
+            lastOpen.put(event.getPlayer().getUniqueId(), now);
             event.setCancelled(true);
             plugin.openMerchant(event.getPlayer(), merchant, 0);
         }

@@ -1,47 +1,57 @@
 package com.liuxingyu.liutrade;
 
-import org.bukkit.entity.HumanEntity;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.MerchantInventory;
 import org.bukkit.inventory.MerchantRecipe;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 /**
- * 原生村民交易界面：实现 {@link org.bukkit.inventory.Merchant}，由
- * {@code player.openMerchant(this, true)} 打开客户端原生的村民交易界面
- * （左侧交易列表、滚动、点击自动放入、音效均由客户端原生处理）。
+ * 一次「原生村民交易界面」会话。
  *
- * <p>村民界面按<b>物品</b>匹配（与服务端 {@link MerchantRecipe} 的示例物品相似），
- * 因此输入取自物品规格的示例（{@code library_id} 解析结果或 {@code material}）；
- * 仅靠 {@code pdc}/{@code name}/规则字段才能区分、且示例无法代表的输入，请改用自定义界面
- * （{@code settings.gui-mode: custom}）。
+ * <p>用 {@link Bukkit#createMerchant(String)} 创建服务端商户（CraftMerchantCustom），
+ * 填充 {@link MerchantRecipe} 后由 {@code player.openMerchant(handle, true)} 打开客户端原生界面：
+ * 左侧交易列表、滚动、点击自动填入、音效都是原生的。
+ *
+ * <p>村民界面按<b>物品</b>匹配（示例物品相似），因此输入取自物品规格的示例
+ * （{@code library_id} 解析结果或 {@code material}）；含 {@code pdc}/{@code name}/规则字段、
+ * 示例无法唯一代表的输入在原生模式下会被跳过（改用 {@code settings.gui-mode: custom}）。
  */
-final class TradeMerchant implements org.bukkit.inventory.Merchant {
+final class NativeShopSession {
 
     private final LiuTrade plugin;
     private final Player player;
     private final Merchant shop;
+    private final org.bukkit.inventory.Merchant handle;
     private final List<Trade> trades = new ArrayList<>();
     private final List<MerchantRecipe> recipes = new ArrayList<>();
 
-    TradeMerchant(LiuTrade plugin, Player player, Merchant shop) {
+    private NativeShopSession(LiuTrade plugin, Player player, Merchant shop,
+                              org.bukkit.inventory.Merchant handle) {
         this.plugin = plugin;
         this.player = player;
         this.shop = shop;
+        this.handle = handle;
+    }
+
+    static NativeShopSession create(LiuTrade plugin, Player player, Merchant shop) {
+        NativeShopSession session = new NativeShopSession(plugin, player, shop,
+                Bukkit.createMerchant(Msg.plain(shop.displayTitle())));
         for (Trade trade : shop.trades) {
             if (!trade.permission.isBlank() && !player.hasPermission(trade.permission)) {
                 continue;
             }
-            MerchantRecipe recipe = build(trade);
+            MerchantRecipe recipe = session.build(trade);
             if (recipe != null) {
-                trades.add(trade);
-                recipes.add(recipe);
+                session.trades.add(trade);
+                session.recipes.add(recipe);
             }
         }
+        session.handle.setRecipes(session.recipes);
+        return session;
     }
 
     private MerchantRecipe build(Trade trade) {
@@ -53,11 +63,11 @@ final class TradeMerchant implements org.bukkit.inventory.Merchant {
         }
         MerchantRecipe recipe = new MerchantRecipe(result.clone(), Integer.MAX_VALUE);
         recipe.setIgnoreDiscounts(true);
-        recipe.setPriceMultiplier(0f);
         for (ItemSpec input : trade.inputs) {
             if (!input.nativeRepresentable()) {
                 plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name
-                        + "」输入含 pdc/name 等规则字段，原生村民界面无法按规则匹配，已跳过该笔（可改用 settings.gui-mode: custom）。");
+                        + "」输入含 pdc/name 等规则字段，原生村民界面无法按规则匹配，已跳过该笔"
+                        + "（可改用 settings.gui-mode: custom）。");
                 return null;
             }
             ItemStack sample = input.sample(plugin.soulSpace());
@@ -73,12 +83,15 @@ final class TradeMerchant implements org.bukkit.inventory.Merchant {
         return recipe;
     }
 
-    /** 由 {@link MerchantRecipe} 反查配置里的交易。 */
-    Trade tradeFor(MerchantRecipe recipe) {
-        int index = recipes.indexOf(recipe);
-        return index >= 0 && index < trades.size() ? trades.get(index) : null;
+    org.bukkit.inventory.Merchant handle() {
+        return handle;
     }
 
+    int size() {
+        return trades.size();
+    }
+
+    /** 由 {@link MerchantInventory#getSelectedRecipeIndex()} 取配置里的交易。 */
     Trade tradeAt(int index) {
         return index >= 0 && index < trades.size() ? trades.get(index) : null;
     }
@@ -86,18 +99,19 @@ final class TradeMerchant implements org.bukkit.inventory.Merchant {
     /** 按真实输入槽计算产出；不匹配返回 null。 */
     ItemStack prepareResult(MerchantInventory inventory) {
         Trade trade = tradeAt(inventory.getSelectedRecipeIndex());
-        if (trade == null) {
+        if (trade == null || !matches(trade, inventory.getItem(0), inventory.getItem(1))) {
             return null;
         }
-        ItemStack in1 = inventory.getItem(0);
-        ItemStack in2 = inventory.getItem(1);
-        if (!matches(trade, in1, in2)) {
-            return null;
-        }
-        return plugin.service().result(player, trade, in1);
+        return plugin.service().result(player, trade, inventory.getItem(0));
     }
 
-    /** 校验当前输入槽是否精确满足该交易（数量足够、无多余物品）。 */
+    /** 校验当前输入槽是否精确满足所选交易（数量足够、无多余物品）。 */
+    boolean validate(MerchantInventory inventory) {
+        Trade trade = tradeAt(inventory.getSelectedRecipeIndex());
+        return trade != null && matches(trade, inventory.getItem(0), inventory.getItem(1));
+    }
+
+    /** 校验输入槽是否精确满足该交易。 */
     boolean matches(Trade trade, ItemStack in1, ItemStack in2) {
         ItemStack[] slots = {in1, in2};
         for (int i = 0; i < 2; i++) {
@@ -115,48 +129,5 @@ final class TradeMerchant implements org.bukkit.inventory.Merchant {
             }
         }
         return true;
-    }
-
-    boolean validate(MerchantInventory inventory, MerchantRecipe recipe) {
-        Trade trade = tradeFor(recipe);
-        return trade != null && matches(trade, inventory.getItem(0), inventory.getItem(1));
-    }
-
-    // ---------------- Merchant ----------------
-
-    @Override
-    public List<MerchantRecipe> getRecipes() {
-        return Collections.unmodifiableList(recipes);
-    }
-
-    @Override
-    public void setRecipes(List<MerchantRecipe> list) {
-        recipes.clear();
-        recipes.addAll(list);
-    }
-
-    @Override
-    public MerchantRecipe getRecipe(int index) {
-        return recipes.get(index);
-    }
-
-    @Override
-    public void setRecipe(int index, MerchantRecipe recipe) {
-        recipes.set(index, recipe);
-    }
-
-    @Override
-    public int getRecipeCount() {
-        return recipes.size();
-    }
-
-    @Override
-    public boolean isTrading() {
-        return false;
-    }
-
-    @Override
-    public HumanEntity getTrader() {
-        return player;
     }
 }
