@@ -60,7 +60,7 @@ trades:
   铁换金:                      # 交易键（仅作标识）
     name: "&f铁锭 &7→ &6金锭"     # 交易名（聊天提示 + 默认图标名）
     display_name: "&6金锭兑换"     # 可选：仅列表图标的显示名（不写则用 name）
-    display:                    # 可选：仅列表图标的物品（不写则用输入[0]）
+    display:                    # 可选：仅列表图标的物品（不写则用首个产出）
       library_id: "mc:GOLD_INGOT"
     description:               # 可选：界面 lore 里名字下方的自定义说明
       - "&7把铁锭换成金锭"

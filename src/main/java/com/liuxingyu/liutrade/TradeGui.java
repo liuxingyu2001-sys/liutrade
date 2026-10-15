@@ -383,13 +383,20 @@ final class TradeGui {
         return icon;
     }
 
-    /** 交易列表图标底物（缓存）：交易自定义 display → 输入[0]的显示样品 → 商店图标 → 箱子。 */
+    /** 交易列表图标底物（缓存）：交易自定义 display → 首个产出（显式 outputs 或 convert 预览）→ 输入[0] → 商店图标 → 箱子。 */
     private ItemStack baseIcon(Trade trade, int index) {
         ItemStack cached = iconCache.get(index);
         if (cached != null) {
             return cached;
         }
         ItemStack sample = trade.display == null ? null : trade.display.iconSample(plugin.soulSpace());
+        if (sample == null) {
+            // 列表图标默认展示「能换到什么」（产出），而不是放进去的东西。
+            List<ItemStack> produced = previews(trade);
+            if (!produced.isEmpty()) {
+                sample = produced.get(0);
+            }
+        }
         if (sample == null) {
             ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
             sample = first == null ? null : first.iconSample(plugin.soulSpace());
