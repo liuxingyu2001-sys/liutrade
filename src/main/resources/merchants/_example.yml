@@ -23,6 +23,11 @@
 #   5) 规则匹配（仅输入）：material: PAPER + pdc: "jiu:jiu"（+ not_pdc: soulbound）
 #      —— 用 pdc/name/lore/custom_model_data + not 匹配任意物品；原生村民界面无法按
 #      规则匹配这类输入（需 settings.gui-mode: custom）。
+#      不包含写法：字段名前加 not_，或值以 ! 开头（pdc/name/lore 都是包含语义）。
+#      例：必须是钻石、但要排除 CraftEngine 自定义物品（native 模式下会跳过该笔）：
+#        material: DIAMOND
+#        not_pdc: "craftengine:id"     # 等价写法 pdc: "!craftengine:id"
+#        # not_pdc: "命名空间:id" 只排除某个 CE 物品；"命名空间:" 排除整个命名空间
 #   6) 显示覆盖（仅界面）：
 #        display: { library_id: "ce:..." }   # 图标显示这个物品，匹配仍按上面规则
 #        display_name: "&6神秘票券"           # 界面里显示的名字（不写则自动取中文名）

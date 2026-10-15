@@ -117,6 +117,25 @@ SoulSpace **2.5.1+**（`SoulSpaceApi.displayName`）；未装/旧版则退回物
 **英文 id 写法很宽松**（`material` 与 `library_id` 均适用）：`DIAMOND` = `diamond` =
 `minecraft:diamond` = `mc:DIAMOND` = `vanilla:diamond`。（SoulSpace 侧自 2.5.2 起同样支持。）
 
+**不包含 / 否定匹配**（仅输入，规则字段通用）：字段名前加 `not_`，或把值写成 `!文本`。`pdc` /
+`name` / `lore` 都是**包含**语义，所以 `not_x: 文本` 即「不含该文本」；否定项是「一票否决」，字段
+之间是「且」。例如「必须是钻石、但排除 CraftEngine 自定义物品」：
+
+```yaml
+inputs:
+  - material: DIAMOND
+    not_pdc: "craftengine:id"     # 等价写法：pdc: "!craftengine:id"
+```
+
+`pdc` 是包含匹配，故也可写 `not_pdc: "命名空间:id"`（只排除某个 CE 物品）或 `not_pdc: "命名空间:"`
+（排除整个命名空间）。`name`（自定义名 / item_name 任一）、`lore`（任一行）、`material`、`namespace`、
+`custom_model_data` 同样支持 `not_<字段>` / `"!值"`；`material`/`namespace` 还支持 `*` 通配
+（`*SWORD*` 包含、`SWORD_*` 前缀、`*_BOX` 后缀）。
+
+> 含否定字段的输入需要 `settings.gui-mode: custom`（原生村民界面无法表达否定，会跳过该笔）；
+> 依赖 SoulSpace **2.5.0+**，未装/旧版时**失败关闭**（不匹配任何物品），避免同材质物品绕过。
+> 注意：若同一输入还写了 `components`/`library_id`/`bytes`（走精确匹配），否定字段不生效。
+
 **`components`** 键可带或不带 `minecraft:` 前缀：`custom_name` / `item_name` / `lore` /
 `custom_model_data` / `enchantments`(或 `stored_enchantments`) / `unbreakable` / `rarity` /
 `max_stack_size` / `fire_resistant` / `hide_tooltip` / `enchantment_glint_override` / `damage` /
