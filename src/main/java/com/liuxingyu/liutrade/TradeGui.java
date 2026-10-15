@@ -1,15 +1,20 @@
 package com.liuxingyu.liutrade;
 
-import org.bukkit.Bukkit;
+import net.momirealms.sparrow.ui.inventory.ReferencingInventory;
+import net.momirealms.sparrow.ui.inventory.VirtualInventory;
+import net.momirealms.sparrow.ui.inventory.operation.OperationCategory;
+import net.momirealms.sparrow.ui.item.Item;
+import net.momirealms.sparrow.ui.pane.Element;
+import net.momirealms.sparrow.ui.pane.NormalPane;
+import net.momirealms.sparrow.ui.pane.Pane;
+import net.momirealms.sparrow.ui.state.MutableSignal;
+import net.momirealms.sparrow.ui.state.Signal;
+import net.momirealms.sparrow.ui.window.NormalWindow;
+import net.momirealms.sparrow.ui.window.WindowCloseReason;
 import org.bukkit.Material;
-import org.bukkit.NamespacedKey;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.Inventory;
-import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
-import org.bukkit.persistence.PersistentDataType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -18,15 +23,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 自定义交易界面（54 格），稀疏布局，玻璃板做边框与分隔：
+ * 自定义交易界面（Sparrow UI 箱子窗口，54 格），稀疏布局，玻璃板做边框与分隔：
  * <pre>
  *   第 1 行：  · [上一页] · [关闭] · [怎么用] · [下一页] ·
  *   第 2~4 行：· [交易] · [交易] · [交易] · [交易] ·       （每页 12 笔，每笔之间玻璃板隔开）
  *   第 5~6 行：· [输入1] · [输入2] · … · [→] · [产出] ·   （输入数量按需显示，最多 6 个）
  * </pre>
- * 输入槽是真实槽位：玩家把物品放进去，产出槽实时显示能换到什么，点产出槽完成交易。
+ * 输入槽是真实的虚拟库存格：玩家把物品放进去，产出槽实时显示能换到什么，点产出槽完成交易。
+ *
+ * <p>界面由 Sparrow UI 托管：产出/交易图标通过 Signal 驱动重渲染，右击交易经
+ * {@link net.momirealms.sparrow.ui.window.Window#navigate} 打开配方窗，ESC 原生返回本界面。</p>
  */
-final class TradeGui implements InventoryHolder {
+final class TradeGui {
 
     /** 交易列表：第 2~4 行的第 1/3/5/7 列（每行 4 笔，共 12 笔，之间是玻璃板）。 */
     static final int[] TRADE_SLOTS = {
@@ -36,15 +44,6 @@ final class TradeGui implements InventoryHolder {
     };
     /** 输入槽：第 5~6 行的第 1/3/5/7 列（最多 {@link Trade#MAX_INPUTS} 个，按商店实际需要显示）。 */
     static final int[] INPUT_SLOTS = {37, 39, 41, 43, 46, 48};
-    /** 玻璃板边框/分隔。 */
-    private static final int[] FILLER_SLOTS = {
-            0, 2, 3, 5, 6, 8,
-            9, 11, 13, 15, 17,
-            18, 20, 22, 24, 26,
-            27, 29, 31, 33, 35,
-            36, 38, 40, 42, 44,
-            45, 47, 49, 51
-    };
     static final int SLOT_PREV = 1;
     static final int SLOT_HELP = 4;
     static final int SLOT_NEXT = 7;
@@ -56,12 +55,16 @@ final class TradeGui implements InventoryHolder {
     private final LiuTrade plugin;
     private final Player player;
     private final Merchant merchant;
-    private final int page;
-    /** 占位玻璃板的标记，避免被当成玩家物品退回背包。 */
-    private final NamespacedKey fillerKey;
-    private Inventory inventory;
+    private final int[] slotToTradeIndex;
+    private final int[] slotToInputIndex;
+    private final MutableSignal<Integer> page;
+    /** 输入槽：一个真实可由玩家放入/取出的虚拟库存。 */
+    private final VirtualInventory inputs;
+    /** 玩家背包引用（下部物品栏），自动放入时直接从这里取物。 */
+    private final ReferencingInventory playerInv;
+    private final NormalWindow window;
     private int selected = -1;
-    // 会话内缓存：CE 物品解析、产出预览只算一次（render 频繁发生时避免重复解析）。
+    // 会话内缓存：CE 物品解析、产出预览只算一次（渲染频繁发生时避免重复解析）。
     private final Map<Integer, ItemStack> iconCache = new HashMap<>();
     private final Map<Integer, List<ItemStack>> previewCache = new HashMap<>();
     private final Map<ItemSpec, String> specNameCache = new IdentityHashMap<>();
@@ -70,125 +73,169 @@ final class TradeGui implements InventoryHolder {
         this.plugin = plugin;
         this.player = player;
         this.merchant = merchant;
-        this.page = Math.max(0, Math.min(page, pageCount()));
-        this.fillerKey = new NamespacedKey(plugin, "gui_filler");
-    }
-
-    void open() {
-        this.inventory = Bukkit.createInventory(this, 54, Msg.color(merchant.displayTitle()));
-        render();
-        player.openInventory(inventory);
-    }
-
-    @Override
-    public Inventory getInventory() {
-        return inventory;
-    }
-
-    Merchant merchant() {
-        return merchant;
-    }
-
-    Player player() {
-        return player;
-    }
-
-    int page() {
-        return page;
-    }
-
-    int pageCount() {
-        int pages = (merchant.trades.size() + TRADE_SLOTS.length - 1) / TRADE_SLOTS.length;
-        return Math.max(1, Math.min(pages, plugin.config().maxPages));
-    }
-
-    /** 本商店一笔交易最多要几种物品（决定显示几个输入槽）。 */
-    int inputCount() {
-        int max = 1;
-        for (Trade trade : merchant.trades) {
-            max = Math.max(max, trade.inputs.size());
-        }
-        return Math.min(max, INPUT_SLOTS.length);
-    }
-
-    static int inputSlot(int index) {
-        return INPUT_SLOTS[Math.max(0, Math.min(index, INPUT_SLOTS.length - 1))];
-    }
-
-    static int inputIndex(int slot) {
-        for (int i = 0; i < INPUT_SLOTS.length; i++) {
-            if (INPUT_SLOTS[i] == slot) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    /** 当前显示出来的输入槽（超出本商店需要的不算）。 */
-    boolean isActiveInput(int slot) {
-        int index = inputIndex(slot);
-        return index >= 0 && index < inputCount();
-    }
-
-    // ---------------- 渲染 ----------------
-
-    void render() {
-        // 先清屏：活动输入槽保留玩家真实物品；隐藏输入槽盖占位玻璃板；其余清空
-        for (int slot = 0; slot < 54; slot++) {
-            if (isActiveInput(slot)) {
-                continue;
-            }
-            if (inputIndex(slot) >= 0) {
-                ItemStack stray = inventory.getItem(slot);
-                if (stray != null && !stray.getType().isAir() && !isFiller(stray)) {
-                    giveOrDrop(player, stray);
-                }
-                inventory.setItem(slot, filler());
-                continue;
-            }
-            inventory.setItem(slot, null);
-        }
-        // 玻璃板边框与分隔
-        for (int slot : FILLER_SLOTS) {
-            inventory.setItem(slot, filler());
-        }
-        inventory.setItem(SLOT_HELP, help());
-        inventory.setItem(SLOT_ARROW, button(Material.ARROW, "&7→ &f产出", null));
-        inventory.setItem(SLOT_OUT, outputIcon());
-        inventory.setItem(SLOT_PREV, page > 0
-                ? button(Material.SPECTRAL_ARROW, "&e上一页", List.of("&7第 " + (page + 1) + " / " + pageCount() + " 页"))
-                : filler());
-        inventory.setItem(SLOT_NEXT, page < pageCount() - 1
-                ? button(Material.SPECTRAL_ARROW, "&e下一页", List.of("&7第 " + (page + 2) + " / " + pageCount() + " 页"))
-                : filler());
-        inventory.setItem(SLOT_CLOSE, button(Material.BARRIER, "&c关闭", List.of("&7点击关闭界面")));
-
-        int start = page * TRADE_SLOTS.length;
+        this.slotToTradeIndex = new int[54];
+        this.slotToInputIndex = new int[54];
+        java.util.Arrays.fill(this.slotToTradeIndex, -1);
+        java.util.Arrays.fill(this.slotToInputIndex, -1);
         for (int i = 0; i < TRADE_SLOTS.length; i++) {
-            int index = start + i;
-            inventory.setItem(TRADE_SLOTS[i], index < merchant.trades.size()
-                    ? tradeIcon(merchant.trades.get(index), index)
-                    : filler());
+            this.slotToTradeIndex[TRADE_SLOTS[i]] = i;
         }
+        for (int i = 0; i < INPUT_SLOTS.length; i++) {
+            this.slotToInputIndex[INPUT_SLOTS[i]] = i;
+        }
+        this.page = Signal.of(clampPage(page));
+        this.inputs = new VirtualInventory(INPUT_SLOTS.length);
+        // 超出本商店需要的输入槽直接拒绝一切放入/取出。
+        for (int i = inputCount(); i < INPUT_SLOTS.length; i++) {
+            this.inputs.setAccessRule(i, context -> false);
+        }
+        this.playerInv = ReferencingInventory.fromPlayerStorageContents(player.getInventory());
+        this.playerInv.operationPriority(OperationCategory.ADD, Integer.MAX_VALUE);
+        this.playerInv.operationPriority(OperationCategory.COLLECT, Integer.MIN_VALUE);
+        this.window = buildWindow();
     }
 
-    private ItemStack filler() {
-        ItemStack item = button(Material.GRAY_STAINED_GLASS_PANE, " ", null);
-        ItemMeta meta = item.getItemMeta();
-        if (meta != null) {
-            meta.getPersistentDataContainer().set(fillerKey, PersistentDataType.BYTE, (byte) 1);
-            item.setItemMeta(meta);
+    // ---------------- 构建 ----------------
+
+    private NormalWindow buildWindow() {
+        NormalPane pane = Pane.empty(9, 6);
+        pane.setBackgroundItem(filler());
+
+        pane.setElement(SLOT_ARROW, Element.item(Item.simple(staticItem(Material.ARROW, "&7→ &f产出", null))));
+        pane.setElement(SLOT_HELP, Element.item(helpItem()));
+        pane.setElement(SLOT_PREV, Element.item(pageButton(false)));
+        pane.setElement(SLOT_NEXT, Element.item(pageButton(true)));
+        pane.setElement(SLOT_CLOSE, Element.item(closeItem()));
+        pane.setElement(SLOT_OUT, Element.item(outputItem()));
+
+        Item tradeIcon = tradeIconItem();
+        for (int slot : TRADE_SLOTS) {
+            pane.setElement(slot, Element.item(tradeIcon));
         }
-        return item;
+        int active = inputCount();
+        for (int i = 0; i < INPUT_SLOTS.length; i++) {
+            pane.setElement(INPUT_SLOTS[i], i < active
+                    ? Element.inventory(inputs, i)
+                    : Element.empty());
+        }
+
+        Pane lower = Pane.empty(9, 4);
+        for (int i = 0; i < playerInv.size(); i++) {
+            lower.setElement(i, Element.inventory(playerInv, i));
+        }
+
+        NormalWindow built = NormalWindow.builder()
+                .setTitleSupplier(() -> Msg.component(merchant.displayTitle()))
+                .setUpperPane(pane)
+                .setLowerPane(lower)
+                .setBackOnPlayerClose(false)
+                .addSessionEndHandler(this::onSessionEnd)
+                .build(player);
+        built.bind(page, win -> win.updateTitle());
+        return built;
     }
 
-    /** 是否为本插件的占位玻璃板（带 PDC 标记）。 */
-    private boolean isFiller(ItemStack item) {
-        if (item == null || item.getType() != Material.GRAY_STAINED_GLASS_PANE) {
-            return false;
+    /** 打开本界面（须在玩家所属线程调用）。 */
+    void open() {
+        window.open();
+    }
+
+    /** 右击交易 → 跳到配方界面（由 Sparrow 会话负责 ESC 返回）。 */
+    void navigateTo(RecipeGui recipe) {
+        window.navigate(recipe.window());
+    }
+
+    /** 会话真正结束时把输入槽剩余物品退回玩家（或被替换/退出时清理）。 */
+    private void onSessionEnd(WindowCloseReason reason) {
+        if ("void".equalsIgnoreCase(plugin.config().leftoverOnClose)
+                || reason == WindowCloseReason.DISCONNECT
+                || !player.isOnline()) {
+            clearInputs();
+        } else {
+            returnInputs();
         }
-        ItemMeta meta = item.getItemMeta();
-        return meta != null && meta.getPersistentDataContainer().has(fillerKey, PersistentDataType.BYTE);
+        plugin.forget(this);
+    }
+
+    // ---------------- 动态元素 ----------------
+
+    private Item tradeIconItem() {
+        return Item.builder()
+                .setItemProvider(context -> tradeIconAt(context.windowSlot))
+                .dependsOn(page, inputs.contentSignal())
+                .addClickHandler(click -> {
+                    int index = tradeIndexAt(click.windowSlot());
+                    if (index < 0) {
+                        return;
+                    }
+                    Trade trade = merchant.trades.get(index);
+                    if (click.clickType().isRightClick()) {
+                        plugin.openRecipeFromGui(click.player(), this, trade);
+                    } else {
+                        autoFill(trade, 0);
+                    }
+                })
+                .build();
+    }
+
+    private Item outputItem() {
+        return Item.builder()
+                .setItemProvider(context -> outputIcon())
+                .dependsOn(page, inputs.contentSignal())
+                .addClickHandler(click -> {
+                    Trade trade = currentTrade();
+                    if (trade == null) {
+                        return;
+                    }
+                    if (click.clickType().isRightClick()) {
+                        plugin.openRecipeFromGui(click.player(), this, trade);
+                    } else {
+                        plugin.service().execute(click.player(), this, trade,
+                                click.clickType().isShiftClick() ? batches(trade) : 1);
+                    }
+                })
+                .build();
+    }
+
+    private Item pageButton(boolean next) {
+        return Item.builder()
+                .setItemProvider(context -> {
+                    boolean enabled = next ? page.get() < pageCount() - 1 : page.get() > 0;
+                    if (!enabled) {
+                        return filler();
+                    }
+                    int target = next ? page.get() + 2 : page.get();
+                    return staticItem(Material.SPECTRAL_ARROW,
+                            next ? "&e下一页" : "&e上一页",
+                            List.of("&7第 " + target + " / " + pageCount() + " 页"));
+                })
+                .dependsOn(page)
+                .addClickHandler(click -> {
+                    if (next) {
+                        if (page.get() < pageCount() - 1) {
+                            selected = -1;
+                            page.update(value -> value + 1);
+                        }
+                    } else if (page.get() > 0) {
+                        selected = -1;
+                        page.update(value -> value - 1);
+                    }
+                })
+                .build();
+    }
+
+    private Item closeItem() {
+        return Item.builder()
+                .setItemProviderConstant(staticItem(Material.BARRIER, "&c关闭", List.of("&7点击关闭界面")))
+                .addClickHandler(click -> click.window().close())
+                .build();
+    }
+
+    private Item helpItem() {
+        return Item.builder()
+                .setItemProvider(context -> help())
+                .dependsOn(page)
+                .build();
     }
 
     /** 顶部「怎么用」说明书（也带商店名与页码）。 */
@@ -198,12 +245,13 @@ final class TradeGui implements InventoryHolder {
         if (meta != null) {
             meta.setDisplayName(Msg.color("&e&l" + merchant.displayName() + " &7· 怎么用"));
             meta.setLore(List.of(
-                    Msg.color("&8第 " + (page + 1) + " / " + pageCount() + " 页 · 共 " + merchant.trades.size() + " 种交易"),
+                    Msg.color("&8第 " + (page.get() + 1) + " / " + pageCount() + " 页 · 共 " + merchant.trades.size() + " 种交易"),
                     Msg.color("&7① &f左键 &7任意交易：自动放入所需物品"),
                     Msg.color("&7② 也可以自己把物品放进下面的输入槽"),
                     Msg.color("&7③ &f产出格 &7出现物品后，&f左键 &7即可交易"),
                     Msg.color("&7④ &fShift+左键 &7产出格：一次交易全部"),
-                    Msg.color("&7⑤ 左右 &f箭头 &7翻页")));
+                    Msg.color("&7⑤ &f右键 &7交易/产出：查看合成配方"),
+                    Msg.color("&7⑥ 左右 &f箭头 &7翻页")));
             item.setItemMeta(meta);
         }
         return item;
@@ -215,11 +263,11 @@ final class TradeGui implements InventoryHolder {
         Trade trade = currentTrade();
         if (trade == null) {
             if (empty) {
-                return button(Material.GRAY_STAINED_GLASS_PANE, "&7产出",
+                return staticItem(Material.GRAY_STAINED_GLASS_PANE, "&7产出",
                         List.of(Msg.color("&7把物品放进左边的输入槽"),
                                 Msg.color("&7或左键下方交易自动放入")));
             }
-            return button(Material.BARRIER, "&c没有匹配的交易",
+            return staticItem(Material.BARRIER, "&c没有匹配的交易",
                     List.of(Msg.color("&7这些物品换不到东西"),
                             Msg.color("&7请对照交易的「需要」")));
         }
@@ -230,7 +278,7 @@ final class TradeGui implements InventoryHolder {
             if (commands) {
                 return commandOutputIcon(trade, batches);
             }
-            return button(Material.BARRIER, "&c无法完成交易",
+            return staticItem(Material.BARRIER, "&c无法完成交易",
                     List.of(Msg.color("&7物品数量不足，或转换规则未命中")));
         }
         ItemStack result = previews.get(0).clone();
@@ -271,7 +319,16 @@ final class TradeGui implements InventoryHolder {
         lore.add("");
         lore.add(Msg.color("&a左键 &7：交易 1 次"));
         lore.add(Msg.color("&aShift+左键 &7：全部 &f" + batches + " &7次"));
-        return button(Material.COMMAND_BLOCK, "&a指令产出", lore);
+        return staticItem(Material.COMMAND_BLOCK, "&a指令产出", lore);
+    }
+
+    /** 交易列表某槽位当前应显示的图标。 */
+    private ItemStack tradeIconAt(int windowSlot) {
+        int index = tradeIndexAt(windowSlot);
+        if (index < 0) {
+            return filler();
+        }
+        return tradeIcon(merchant.trades.get(index), index);
     }
 
     /** 交易列表里的一笔交易。 */
@@ -346,13 +403,13 @@ final class TradeGui implements InventoryHolder {
         return icon;
     }
 
-    /** 产出预览（缓存，避免每次 render 重复跑转换规则）。 */
+    /** 产出预览（缓存，避免每次渲染重复跑转换规则）。 */
     private List<ItemStack> previews(Trade trade) {
         int index = merchant.trades.indexOf(trade);
         if (index < 0) {
             return plugin.service().previewAll(player, trade);
         }
-        return previewCache.computeIfAbsent(index, k -> plugin.service().previewAll(player, trade));
+        return previewCache.computeIfAbsent(index, key -> plugin.service().previewAll(player, trade));
     }
 
     /** 物品规格显示名（缓存，避免重复解析 CE 物品）。 */
@@ -369,7 +426,11 @@ final class TradeGui implements InventoryHolder {
         return name;
     }
 
-    private static ItemStack button(Material material, String name, List<String> lore) {
+    private ItemStack filler() {
+        return staticItem(Material.GRAY_STAINED_GLASS_PANE, " ", null);
+    }
+
+    private static ItemStack staticItem(Material material, String name, List<String> lore) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
@@ -402,7 +463,7 @@ final class TradeGui implements InventoryHolder {
     int batches(Trade trade) {
         int batches = Integer.MAX_VALUE;
         for (int i = 0; i < trade.inputs.size(); i++) {
-            ItemStack item = inventory.getItem(inputSlot(i));
+            ItemStack item = inputs.itemAt(i);
             if (item == null || item.getType().isAir()
                     || !trade.inputs.get(i).matches(item, plugin.soulSpace())) {
                 return 0;
@@ -414,7 +475,7 @@ final class TradeGui implements InventoryHolder {
 
     private boolean inputsEmpty() {
         for (int i = 0; i < inputCount(); i++) {
-            ItemStack item = inventory.getItem(inputSlot(i));
+            ItemStack item = inputs.itemAt(i);
             if (item != null && !item.getType().isAir()) {
                 return false;
             }
@@ -441,18 +502,16 @@ final class TradeGui implements InventoryHolder {
                     : spec.amount * batches;
             ItemStack taken = takeFromPlayer(spec, need);
             if (taken != null) {
-                inventory.setItem(inputSlot(i), taken);
+                setInput(i, taken);
             }
         }
         selected = merchant.trades.indexOf(trade);
-        render();
     }
 
     private ItemStack takeFromPlayer(ItemSpec spec, int need) {
-        PlayerInventory inv = player.getInventory();
         ItemStack result = null;
-        for (int i = 0; i < 36 && need > 0; i++) {
-            ItemStack item = inv.getItem(i);
+        for (int i = 0; i < playerInv.size() && need > 0; i++) {
+            ItemStack item = playerInv.itemAt(i);
             if (item == null || item.getType().isAir() || !spec.matches(item, plugin.soulSpace())) {
                 continue;
             }
@@ -471,24 +530,43 @@ final class TradeGui implements InventoryHolder {
                 result.setAmount(result.getAmount() + take);
             }
             if (take >= item.getAmount()) {
-                inv.setItem(i, null);
+                playerInv.setItem(i, null);
             } else {
                 item.setAmount(item.getAmount() - take);
-                inv.setItem(i, item);
+                playerInv.setItem(i, item);
             }
             need -= take;
         }
         return result;
     }
 
-    /** 把输入槽里剩下的物品退回玩家背包（放不下则原地掉落）；占位玻璃板不会退回。 */
+    // ---------------- 输入槽访问（供 TradeService 使用） ----------------
+
+    /** 读取第 {@code index} 个输入槽的物品。 */
+    ItemStack inputAt(int index) {
+        return inputs.itemAt(index);
+    }
+
+    /** 写入第 {@code index} 个输入槽的物品。 */
+    void setInput(int index, ItemStack item) {
+        inputs.setItem(index, item);
+    }
+
+    /** 把输入槽里剩下的物品退回玩家背包（放不下则原地掉落）。 */
     void returnInputs() {
-        for (int slot : INPUT_SLOTS) {
-            ItemStack item = inventory.getItem(slot);
-            if (item != null && !item.getType().isAir() && !isFiller(item)) {
+        for (int i = 0; i < INPUT_SLOTS.length; i++) {
+            ItemStack item = inputs.itemAt(i);
+            if (item != null && !item.getType().isAir()) {
                 giveOrDrop(player, item.clone());
-                inventory.setItem(slot, null);
+                inputs.setItem(i, null);
             }
+        }
+    }
+
+    /** 丢弃输入槽内全部物品（不退回）。 */
+    void clearInputs() {
+        for (int i = 0; i < INPUT_SLOTS.length; i++) {
+            inputs.setItem(i, null);
         }
     }
 
@@ -497,6 +575,70 @@ final class TradeGui implements InventoryHolder {
         for (ItemStack drop : leftover.values()) {
             player.getWorld().dropItemNaturally(player.getLocation(), drop);
         }
+    }
+
+    // ---------------- 槽位换算 ----------------
+
+    Merchant merchant() {
+        return merchant;
+    }
+
+    Player player() {
+        return player;
+    }
+
+    int page() {
+        return page.get();
+    }
+
+    int pageCount() {
+        int pages = (merchant.trades.size() + TRADE_SLOTS.length - 1) / TRADE_SLOTS.length;
+        return Math.max(1, Math.min(pages, plugin.config().maxPages));
+    }
+
+    private int clampPage(int page) {
+        return Math.max(0, Math.min(page, pageCount() - 1));
+    }
+
+    /** 本商店一笔交易最多要几种物品（决定显示几个输入槽）。 */
+    int inputCount() {
+        int max = 1;
+        for (Trade trade : merchant.trades) {
+            max = Math.max(max, trade.inputs.size());
+        }
+        return Math.min(max, INPUT_SLOTS.length);
+    }
+
+    static int inputSlot(int index) {
+        return INPUT_SLOTS[Math.max(0, Math.min(index, INPUT_SLOTS.length - 1))];
+    }
+
+    static int inputIndex(int slot) {
+        for (int i = 0; i < INPUT_SLOTS.length; i++) {
+            if (INPUT_SLOTS[i] == slot) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    /** 当前显示出来的输入槽（超出本商店需要的不算）。 */
+    boolean isActiveInput(int slot) {
+        int index = slot >= 0 && slot < slotToInputIndex.length ? slotToInputIndex[slot] : -1;
+        return index >= 0 && index < inputCount();
+    }
+
+    /** 交易列表槽位对应的全局交易下标，非交易槽返回 -1。 */
+    int tradeIndexAt(int windowSlot) {
+        if (windowSlot < 0 || windowSlot >= slotToTradeIndex.length) {
+            return -1;
+        }
+        int local = slotToTradeIndex[windowSlot];
+        if (local < 0) {
+            return -1;
+        }
+        int index = page.get() * TRADE_SLOTS.length + local;
+        return index >= 0 && index < merchant.trades.size() ? index : -1;
     }
 
     static boolean isTradeSlot(int slot) {

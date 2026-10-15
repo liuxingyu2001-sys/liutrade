@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -21,6 +22,9 @@ public final class LiuTrade extends JavaPlugin {
     private final TradeConfig config = new TradeConfig();
     private final Map<UUID, TradeGui> open = new HashMap<>();
     private final Map<org.bukkit.inventory.Merchant, NativeShopSession> nativeSessions = new IdentityHashMap<>();
+    /** 正在查看配方而被替换的原生商户（关闭时不应遗忘，以便返回）。 */
+    private final java.util.Set<org.bukkit.inventory.Merchant> navigatingNative =
+            java.util.Collections.newSetFromMap(new IdentityHashMap<>());
     private MerchantManager manager;
     private SoulSpaceHook soulSpace;
     private TradeService service;
@@ -31,6 +35,7 @@ public final class LiuTrade extends JavaPlugin {
         saveDefaultConfig();
         copyExample();
         config.load(getConfig());
+        boolean sparrow = SparrowBootstrap.setUp(this);
         soulSpace = new SoulSpaceHook(this);
         if (!soulSpace.connect()) {
             if (Bukkit.getPluginManager().getPlugin("SoulSpace") != null) {
@@ -51,7 +56,10 @@ public final class LiuTrade extends JavaPlugin {
             command.setTabCompleter(executor);
         }
         new CitizensHook(this).register();
-        getLogger().info("界面模式：" + config.guiMode + ("custom".equals(config.guiMode) ? "（自定义箱子界面）" : "（原生村民界面）"));
+        getLogger().info("界面模式：" + config.guiMode + ("custom".equals(config.guiMode) ? "（Sparrow UI 自定义界面）" : "（原生村民界面）"));
+        if ("custom".equals(config.guiMode) && !sparrow) {
+            getLogger().warning("自定义界面需要 Sparrow UI，初始化失败时已自动回退为原生村民界面。");
+        }
         if (config.autoReload) {
             long period = config.pollIntervalTicks;
             Sched.runGlobalTimer(this, this::poll, period, period);
@@ -65,13 +73,12 @@ public final class LiuTrade extends JavaPlugin {
             if (gui.player().isOnline()) {
                 gui.returnInputs();
             } else {
-                for (int slot : TradeGui.INPUT_SLOTS) {
-                    gui.getInventory().setItem(slot, null);
-                }
+                gui.clearInputs();
             }
         }
         open.clear();
         nativeSessions.clear();
+        navigatingNative.clear();
     }
 
     private void copyExample() {
@@ -151,28 +158,45 @@ public final class LiuTrade extends JavaPlugin {
             player.sendMessage(prefixed("no-permission"));
             return;
         }
-        if ("custom".equals(config.guiMode)) {
-            TradeGui gui = new TradeGui(this, player, merchant, page);
-            open.put(player.getUniqueId(), gui);
-            gui.open();
-        } else {
-            NativeShopSession session;
-            try {
-                session = NativeShopSession.create(this, player, merchant);
-            } catch (Throwable t) {
-                getLogger().warning("打开原生村民界面失败，回退到自定义界面：" + t);
-                TradeGui gui = new TradeGui(this, player, merchant, page);
-                open.put(player.getUniqueId(), gui);
-                gui.open();
-                return;
+        // 建窗/开容器都要在玩家所属线程执行（Folia 区域线程）。
+        Sched.runForPlayer(this, player, () -> {
+            if (player.isOnline()) {
+                openMerchantNow(player, merchant, page);
             }
-            if (session.size() == 0) {
-                player.sendMessage(prefixed("no-trades"));
-                return;
-            }
-            nativeSessions.put(session.handle(), session);
-            player.openMerchant(session.handle(), true);
+        });
+    }
+
+    /** 实际打开（已确保在玩家所属线程执行）。 */
+    private void openMerchantNow(Player player, Merchant merchant, int page) {
+        if ("custom".equals(config.guiMode) && SparrowBootstrap.ready()) {
+            openCustomNow(player, merchant, page);
+            return;
         }
+        NativeShopSession session;
+        try {
+            session = NativeShopSession.create(this, player, merchant);
+        } catch (Throwable t) {
+            getLogger().warning("打开原生村民界面失败：" + t);
+            if (SparrowBootstrap.ready()) {
+                openCustomNow(player, merchant, page);
+            } else {
+                player.sendMessage(prefixed("no-trades"));
+            }
+            return;
+        }
+        if (session.size() == 0) {
+            player.sendMessage(prefixed("no-trades"));
+            return;
+        }
+        nativeSessions.put(session.handle(), session);
+        player.openMerchant(session.handle(), true);
+    }
+
+    /** 打开 Sparrow 自定义界面（已确保在玩家所属线程执行）。 */
+    private void openCustomNow(Player player, Merchant merchant, int page) {
+        TradeGui gui = new TradeGui(this, player, merchant, page);
+        open.put(player.getUniqueId(), gui);
+        gui.open();
     }
 
     NativeShopSession nativeSession(org.bukkit.inventory.Merchant handle) {
@@ -180,9 +204,94 @@ public final class LiuTrade extends JavaPlugin {
     }
 
     void forgetNative(org.bukkit.inventory.Merchant handle) {
-        if (handle != null) {
-            nativeSessions.remove(handle);
+        if (handle == null) {
+            return;
         }
+        // 被配方界面替换时会话要保留，返回时才能重新打开
+        if (navigatingNative.remove(handle)) {
+            return;
+        }
+        nativeSessions.remove(handle);
+    }
+
+    // ---------------- 配方查看 ----------------
+
+    /** 自定义界面：右键交易/产出格 → 查看该交易产出物品的配方（ESC 由 Sparrow 会话原生返回）。 */
+    void openRecipeFromGui(Player player, TradeGui gui, Trade trade) {
+        if (!SparrowBootstrap.ready()) {
+            player.sendMessage(prefixed("recipe-none"));
+            return;
+        }
+        ItemStack target = recipeTarget(player, trade);
+        if (target == null) {
+            player.sendMessage(prefixed("recipe-none"));
+            return;
+        }
+        List<Recipe> recipes = RecipeGui.find(target);
+        if (recipes.isEmpty()) {
+            player.sendMessage(prefixed("recipe-none"));
+            return;
+        }
+        gui.navigateTo(RecipeGui.child(this, player, target, recipes));
+    }
+
+    /** 原生村民界面：右键产出格 → 查看配方，关闭后重新打开村民界面。 */
+    void openRecipeFromNative(Player player, NativeShopSession session, Trade trade) {
+        if (!SparrowBootstrap.ready()) {
+            player.sendMessage(prefixed("recipe-none"));
+            return;
+        }
+        ItemStack target = recipeTarget(player, trade);
+        if (target == null) {
+            player.sendMessage(prefixed("recipe-none"));
+            return;
+        }
+        List<Recipe> recipes = RecipeGui.find(target);
+        if (recipes.isEmpty()) {
+            player.sendMessage(prefixed("recipe-none"));
+            return;
+        }
+        // 打开配方窗会先关掉村民容器，这里标记会话不要被遗忘，返回时才能重开。
+        navigatingNative.add(session.handle());
+        RecipeGui.openRoot(this, player, target, recipes, () -> {
+            navigatingNative.remove(session.handle());
+            // 会话结束当刻直接开原生容器可能与会话收尾相冲，放到下一 tick 的玩家线程。
+            Sched.runForPlayer(this, player, () -> {
+                if (player.isOnline()) {
+                    nativeSessions.put(session.handle(), session);
+                    player.openMerchant(session.handle(), true);
+                }
+            });
+        });
+    }
+
+    /** 查配方用的目标物品：优先显式产出 → convert 预览 → 显示物品 → 输入[0]。 */
+    private ItemStack recipeTarget(Player player, Trade trade) {
+        ItemStack sample = firstItem(trade.outputs);
+        if (sample != null) {
+            return sample;
+        }
+        if (trade.convert) {
+            ItemStack converted = service.preview(player, trade);
+            if (converted != null && !converted.getType().isAir()) {
+                return converted;
+            }
+        }
+        if (trade.display != null) {
+            ItemStack display = trade.display.iconSample(soulSpace);
+            if (display != null && !display.getType().isAir()) {
+                return display;
+            }
+        }
+        return firstItem(trade.inputs);
+    }
+
+    private ItemStack firstItem(List<ItemSpec> specs) {
+        if (specs == null || specs.isEmpty()) {
+            return null;
+        }
+        ItemStack sample = specs.get(0).iconSample(soulSpace);
+        return sample == null || sample.getType().isAir() ? null : sample;
     }
 
     void forget(TradeGui gui) {

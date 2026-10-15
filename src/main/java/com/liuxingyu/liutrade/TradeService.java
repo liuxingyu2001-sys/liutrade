@@ -3,7 +3,6 @@ package com.liuxingyu.liutrade;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.ArrayList;
@@ -52,11 +51,10 @@ final class TradeService {
             player.sendMessage(plugin.prefixed("trade-fail"));
             return false;
         }
-        Inventory inventory = gui.getInventory();
         List<ItemStack> outputs = new ArrayList<>();
         if (trade.hasItemOutput()) {
             for (int i = 0; i < times; i++) {
-                ItemStack subject = inventory.getItem(TradeGui.inputSlot(0));
+                ItemStack subject = gui.inputAt(0);
                 List<ItemStack> produced = produceAll(player, trade, subject);
                 if (produced.isEmpty()) {
                     player.sendMessage(plugin.prefixed(trade.convert ? "soulspace-missing" : "trade-fail"));
@@ -66,14 +64,16 @@ final class TradeService {
             }
         }
         for (int i = 0; i < trade.inputs.size(); i++) {
-            int slot = TradeGui.inputSlot(i);
-            ItemStack item = inventory.getItem(slot);
+            ItemStack item = gui.inputAt(i);
+            if (item == null) {
+                continue;
+            }
             int remaining = item.getAmount() - trade.inputs.get(i).amount * times;
             if (remaining <= 0) {
-                inventory.setItem(slot, null);
+                gui.setInput(i, null);
             } else {
                 item.setAmount(remaining);
-                inventory.setItem(slot, item);
+                gui.setInput(i, item);
             }
         }
         for (ItemStack output : outputs) {
@@ -85,7 +85,6 @@ final class TradeService {
                     "%name%", Msg.color(trade.name),
                     "%times%", String.valueOf(times)));
         }
-        gui.render();
         return true;
     }
 

@@ -7,12 +7,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
-import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.MerchantInventory;
 
-/** 交易界面事件。 */
+/** 交易界面事件（自定义界面由 Sparrow UI 内部处理，这里只留原生村民界面相关）。 */
 final class TradeListener implements Listener {
 
     private final LiuTrade plugin;
@@ -23,62 +22,24 @@ final class TradeListener implements Listener {
 
     @EventHandler
     public void onClick(InventoryClickEvent event) {
-        if (!(event.getInventory().getHolder() instanceof TradeGui gui)) {
+        if (event.getInventory() instanceof MerchantInventory merchantInventory) {
+            handleNativeRecipeClick(event, merchantInventory);
+        }
+    }
+
+    /** 原生村民界面：右键产出格查看配方。 */
+    private void handleNativeRecipeClick(InventoryClickEvent event, MerchantInventory merchantInventory) {
+        NativeShopSession session = plugin.nativeSession(merchantInventory.getMerchant());
+        if (session == null || !event.isRightClick() || event.getRawSlot() != 2) {
             return;
         }
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
-        if (event.getClickedInventory() == null) {
-            event.setCancelled(true);
-            return;
-        }
-        if (!event.getClickedInventory().equals(event.getInventory())) {
-            if (event.isShiftClick()) {
-                event.setCancelled(true);
-            }
-            return;
-        }
-        int slot = event.getRawSlot();
-        if (gui.isActiveInput(slot)) {
-            Sched.runForPlayer(plugin, player, gui::render);
-            return;
-        }
         event.setCancelled(true);
-        if (slot == TradeGui.SLOT_OUT) {
-            Trade trade = gui.currentTrade();
-            if (trade != null) {
-                plugin.service().execute(player, gui, trade, event.isShiftClick() ? gui.batches(trade) : 1);
-            }
-        } else if (slot == TradeGui.SLOT_CLOSE) {
-            player.closeInventory();
-        } else if (slot == TradeGui.SLOT_PREV) {
-            plugin.openMerchant(player, gui.merchant(), gui.page() - 1);
-        } else if (slot == TradeGui.SLOT_NEXT) {
-            plugin.openMerchant(player, gui.merchant(), gui.page() + 1);
-        } else if (TradeGui.isTradeSlot(slot)) {
-            int index = gui.page() * TradeGui.TRADE_SLOTS.length + tradeIndex(slot);
-            if (index >= 0 && index < gui.merchant().trades.size()) {
-                gui.autoFill(gui.merchant().trades.get(index), 0);
-            }
-        }
-    }
-
-    @EventHandler
-    public void onDrag(InventoryDragEvent event) {
-        if (!(event.getInventory().getHolder() instanceof TradeGui gui)) {
-            return;
-        }
-        for (int slot : event.getRawSlots()) {
-            if (slot < 54 && !gui.isActiveInput(slot)) {
-                event.setCancelled(true);
-                return;
-            }
-        }
-        if (event.getWhoClicked() instanceof Player player) {
-            Sched.runForPlayer(plugin, player, gui::render);
-        } else {
-            gui.render();
+        Trade trade = session.tradeAt(merchantInventory.getSelectedRecipeIndex());
+        if (trade != null) {
+            plugin.openRecipeFromNative(player, session, trade);
         }
     }
 
@@ -93,17 +54,6 @@ final class TradeListener implements Listener {
         if (event.getInventory() instanceof MerchantInventory merchantInventory) {
             plugin.forgetNative(merchantInventory.getMerchant());
         }
-        if (!(event.getInventory().getHolder() instanceof TradeGui gui)) {
-            return;
-        }
-        if ("void".equalsIgnoreCase(plugin.config().leftoverOnClose)) {
-            for (int slot : TradeGui.INPUT_SLOTS) {
-                gui.getInventory().setItem(slot, null);
-            }
-        } else {
-            gui.returnInputs();
-        }
-        plugin.forget(gui);
     }
 
     // ---------------- 原生村民界面 ----------------
@@ -147,14 +97,5 @@ final class TradeListener implements Listener {
                         "%times%", "1"));
             }
         }
-    }
-
-    private static int tradeIndex(int slot) {
-        for (int i = 0; i < TradeGui.TRADE_SLOTS.length; i++) {
-            if (TradeGui.TRADE_SLOTS[i] == slot) {
-                return i;
-            }
-        }
-        return -1;
     }
 }

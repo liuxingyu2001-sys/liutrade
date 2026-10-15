@@ -6,7 +6,7 @@
 
   <groupId>com.liuxingyu</groupId>
   <artifactId>LiuTrade</artifactId>
-  <version>0.3.7</version>
+  <version>0.3.8</version>
   <packaging>jar</packaging>
   <name>LiuTrade</name>
   <description>虚拟村民交易 - 读取独立 YAML，放入物品取出新物品（依赖 SoulSpace 规则/物品库）</description>
@@ -50,6 +50,41 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.2.5</version>
       </plugin>
+      <!-- Sparrow UI 整体 relocate 后打进主 jar（其余依赖都是 provided/test，会被排除）。
+           重定位目标必须与插件自有包名不同，避免与其他同样携带 Sparrow 的插件冲突。 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-shade-plugin</artifactId>
+        <version>3.5.3</version>
+        <executions>
+          <execution>
+            <phase>package</phase>
+            <goals>
+              <goal>shade</goal>
+            </goals>
+            <configuration>
+              <createDependencyReducedPom>false</createDependencyReducedPom>
+              <relocations>
+                <relocation>
+                  <pattern>net.momirealms.sparrow.ui</pattern>
+                  <shadedPattern>com.liuxingyu.liutrade.libs.sparrow.ui</shadedPattern>
+                </relocation>
+              </relocations>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                    <exclude>module-info.class</exclude>
+                  </excludes>
+                </filter>
+              </filters>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 
@@ -57,6 +92,10 @@
     <repository>
       <id>papermc</id>
       <url>https://repo.papermc.io/repository/maven-public/</url>
+    </repository>
+    <repository>
+      <id>momirealms</id>
+      <url>https://repo.momirealms.net/snapshots</url>
     </repository>
   </repositories>
 
@@ -66,6 +105,12 @@
       <artifactId>paper-api</artifactId>
       <version>${paper.version}</version>
       <scope>provided</scope>
+    </dependency>
+    <!-- 反应式容器界面框架（Apache-2.0）：与 SoulSpace 一致，shade 时整体 relocate。 -->
+    <dependency>
+      <groupId>net.momirealms</groupId>
+      <artifactId>sparrow-ui</artifactId>
+      <version>beta.38</version>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
