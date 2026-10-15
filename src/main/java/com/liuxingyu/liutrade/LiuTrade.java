@@ -4,7 +4,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.Recipe;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -216,23 +215,13 @@ public final class LiuTrade extends JavaPlugin {
 
     // ---------------- 配方查看 ----------------
 
-    /** 自定义界面：右键交易/产出格 → 查看该交易产出物品的配方（ESC 由 Sparrow 会话原生返回）。 */
+    /** 自定义界面：右键交易/产出格 → 查看这笔交易配置的输入→输出配方（ESC 由 Sparrow 会话原生返回）。 */
     void openRecipeFromGui(Player player, TradeGui gui, Trade trade) {
         if (!SparrowBootstrap.ready()) {
             player.sendMessage(prefixed("recipe-none"));
             return;
         }
-        ItemStack target = recipeTarget(player, trade);
-        if (target == null) {
-            player.sendMessage(prefixed("recipe-none"));
-            return;
-        }
-        List<Recipe> recipes = RecipeGui.find(target);
-        if (recipes.isEmpty()) {
-            player.sendMessage(prefixed("recipe-none"));
-            return;
-        }
-        gui.navigateTo(RecipeGui.child(this, player, target, recipes));
+        gui.navigateTo(RecipeGui.child(this, player, trade));
     }
 
     /** 原生村民界面：右键产出格 → 查看配方，关闭后重新打开村民界面。 */
@@ -241,19 +230,9 @@ public final class LiuTrade extends JavaPlugin {
             player.sendMessage(prefixed("recipe-none"));
             return;
         }
-        ItemStack target = recipeTarget(player, trade);
-        if (target == null) {
-            player.sendMessage(prefixed("recipe-none"));
-            return;
-        }
-        List<Recipe> recipes = RecipeGui.find(target);
-        if (recipes.isEmpty()) {
-            player.sendMessage(prefixed("recipe-none"));
-            return;
-        }
         // 打开配方窗会先关掉村民容器，这里标记会话不要被遗忘，返回时才能重开。
         navigatingNative.add(session.handle());
-        RecipeGui.openRoot(this, player, target, recipes, () -> {
+        RecipeGui.openRoot(this, player, trade, () -> {
             navigatingNative.remove(session.handle());
             // 会话结束当刻直接开原生容器可能与会话收尾相冲，放到下一 tick 的玩家线程。
             Sched.runForPlayer(this, player, () -> {
@@ -263,35 +242,6 @@ public final class LiuTrade extends JavaPlugin {
                 }
             });
         });
-    }
-
-    /** 查配方用的目标物品：优先显式产出 → convert 预览 → 显示物品 → 输入[0]。 */
-    private ItemStack recipeTarget(Player player, Trade trade) {
-        ItemStack sample = firstItem(trade.outputs);
-        if (sample != null) {
-            return sample;
-        }
-        if (trade.convert) {
-            ItemStack converted = service.preview(player, trade);
-            if (converted != null && !converted.getType().isAir()) {
-                return converted;
-            }
-        }
-        if (trade.display != null) {
-            ItemStack display = trade.display.iconSample(soulSpace);
-            if (display != null && !display.getType().isAir()) {
-                return display;
-            }
-        }
-        return firstItem(trade.inputs);
-    }
-
-    private ItemStack firstItem(List<ItemSpec> specs) {
-        if (specs == null || specs.isEmpty()) {
-            return null;
-        }
-        ItemStack sample = specs.get(0).iconSample(soulSpace);
-        return sample == null || sample.getType().isAir() ? null : sample;
     }
 
     void forget(TradeGui gui) {

@@ -36,5 +36,5 @@ messages:
   output-full: '&e背包放不下产出，已尽量放入。'
   limit-reached: '&c这笔交易已达上限（%limit% 次）。'
   soulspace-missing: '&c这笔交易需要 SoulSpace（未安装或未启用）。'
-  recipe-none: '&7这个物品没有可查看的合成配方。'
+  recipe-none: '&c这笔交易没有可查看的配方。'
   reloaded: '&a已重载 &f%count% &a个商店。'

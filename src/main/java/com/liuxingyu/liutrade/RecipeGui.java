@@ -4,61 +4,41 @@ import net.momirealms.sparrow.ui.item.Item;
 import net.momirealms.sparrow.ui.pane.Element;
 import net.momirealms.sparrow.ui.pane.NormalPane;
 import net.momirealms.sparrow.ui.pane.Pane;
-import net.momirealms.sparrow.ui.state.MutableSignal;
-import net.momirealms.sparrow.ui.state.Signal;
 import net.momirealms.sparrow.ui.window.NormalWindow;
-import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
-import org.bukkit.inventory.CookingRecipe;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.Recipe;
-import org.bukkit.inventory.RecipeChoice;
-import org.bukkit.inventory.ShapedRecipe;
-import org.bukkit.inventory.ShapelessRecipe;
-import org.bukkit.inventory.SmithingRecipe;
-import org.bukkit.inventory.SmithingTransformRecipe;
-import org.bukkit.inventory.SmithingTrimRecipe;
-import org.bukkit.inventory.StonecuttingRecipe;
-import org.bukkit.inventory.TransmuteRecipe;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 
 /**
- * 配方查看界面（Sparrow UI 箱子窗口）：右键交易打开，ESC 或「返回」按钮回到上一界面。
+ * 交易配方查看界面（Sparrow UI 箱子窗口）：展示这笔交易<b>自己配置的输入 → 输出</b>
+ * （不是原版工作台配方）。
  *
- * <p>支持合成（有序/无序）、染色（transmute）、烧炼、切石、锻造等配方；同一物品有多个配方时
- * 用左右箭头切换。作为交易界面的下一扇打开时，ESC 由 Sparrow 会话原生返回；从原生村民界面
- * 打开时是根窗，结束后由 {@code onEnd} 重新打开村民界面。</p>
+ * <p>左侧 3×3 摆输入（含数量与「按规则匹配」提示），中间箭头，右侧摆产出（显式 outputs 或
+ * {@code convert} 转换预览），有指令产出时额外显示指令块。作为交易界面的下一扇打开时，
+ * ESC 由 Sparrow 会话原生返回；从原生村民界面打开时是根窗，结束后由 {@code onEnd} 重开村民界面。</p>
  */
 final class RecipeGui {
 
-    /** 3×3 工作格在 54 格箱子里的位置。 */
-    private static final int[] GRID = {10, 11, 12, 19, 20, 21, 28, 29, 30};
-    static final int SLOT_ARROW = 24;
-    static final int SLOT_RESULT = 25;
-    static final int SLOT_PREV = 45;
-    static final int SLOT_BACK = 49;
-    static final int SLOT_NEXT = 53;
+    /** 输入摆放位（3×3 网格）。 */
+    private static final int[] INPUT_SLOTS = {10, 11, 12, 19, 20, 21, 28, 29, 30};
+    /** 产出摆放位（首个在产出格，其余向下）。 */
+    private static final int[] OUTPUT_SLOTS = {25, 34, 43, 52};
+    private static final int SLOT_ARROW = 24;
+    private static final int SLOT_COMMAND = 16;
+    private static final int SLOT_BACK = 49;
 
-    private final LiuTrade plugin;
     private final Player player;
-    private final List<Recipe> recipes;
-    private final MutableSignal<Integer> index;
     private final NormalWindow window;
 
-    private RecipeGui(LiuTrade plugin, Player player, ItemStack target, List<Recipe> recipes, Runnable onEnd) {
-        this.plugin = plugin;
+    private RecipeGui(LiuTrade plugin, Player player, Trade trade, Runnable onEnd) {
         this.player = player;
-        this.recipes = recipes;
-        this.index = Signal.of(0);
         this.window = NormalWindow.builder()
-                .setTitleSupplier(() -> Msg.component("&8配方：&f" + plugin.itemName(target)))
-                .setUpperPane(buildPane())
+                .setTitleSupplier(() -> Msg.component("&8交易配方：&f" + tradeName(trade)))
+                .setUpperPane(buildPane(plugin, trade))
                 .setBackOnPlayerClose(true)
                 .addSessionEndHandler(reason -> {
                     if (onEnd != null && player.isOnline()) {
@@ -69,225 +49,120 @@ final class RecipeGui {
     }
 
     /** 构造一扇作为交易界面下一级的配方窗（ESC 由 Sparrow 会话原生返回）。 */
-    static RecipeGui child(LiuTrade plugin, Player player, ItemStack target, List<Recipe> recipes) {
-        return new RecipeGui(plugin, player, target, recipes, null);
+    static RecipeGui child(LiuTrade plugin, Player player, Trade trade) {
+        return new RecipeGui(plugin, player, trade, null);
     }
 
     /** 作为根窗打开（原生村民界面用），关闭后回调 {@code onEnd}。 */
-    static void openRoot(LiuTrade plugin, Player player, ItemStack target, List<Recipe> recipes, Runnable onEnd) {
-        new RecipeGui(plugin, player, target, recipes, onEnd).window.open();
+    static void openRoot(LiuTrade plugin, Player player, Trade trade, Runnable onEnd) {
+        new RecipeGui(plugin, player, trade, onEnd).window.open();
     }
 
     NormalWindow window() {
         return window;
     }
 
-    private NormalPane buildPane() {
+    private NormalPane buildPane(LiuTrade plugin, Trade trade) {
         NormalPane pane = Pane.empty(9, 6);
         pane.setBackgroundItem(border());
-        Item grid = gridItem();
-        for (int slot : GRID) {
-            pane.setElement(slot, Element.item(grid));
+
+        // 输入
+        int index = 0;
+        for (ItemSpec spec : trade.inputs) {
+            if (index >= INPUT_SLOTS.length) {
+                break;
+            }
+            pane.setElement(INPUT_SLOTS[index++], Element.item(Item.simple(inputIcon(plugin, spec))));
         }
-        pane.setElement(SLOT_ARROW, Element.item(Item.simple(staticItem(Material.ARROW, "&7→", null))));
-        pane.setElement(SLOT_RESULT, Element.item(resultItem()));
-        pane.setElement(SLOT_BACK, Element.item(backItem()));
-        pane.setElement(SLOT_PREV, Element.item(switchItem(false)));
-        pane.setElement(SLOT_NEXT, Element.item(switchItem(true)));
+
+        // 产出：显式 outputs 或 convert 转换预览
+        List<ItemStack> outputs = plugin.service().previewAll(player, trade);
+
+        // 箭头
+        pane.setElement(SLOT_ARROW, Element.item(Item.simple(arrow(outputs.size(), trade.hasCommands()))));
+
+        for (int i = 0; i < outputs.size() && i < OUTPUT_SLOTS.length; i++) {
+            pane.setElement(OUTPUT_SLOTS[i], Element.item(Item.simple(outputIcon(outputs.get(i)))));
+        }
+        if (outputs.isEmpty() && !trade.hasCommands()) {
+            pane.setElement(OUTPUT_SLOTS[0], Element.item(Item.simple(
+                    staticItem(Material.BARRIER, "&c无产出", List.of("&7这笔交易没有配置产出")))));
+        }
+
+        // 指令产出
+        if (trade.hasCommands()) {
+            pane.setElement(SLOT_COMMAND, Element.item(Item.simple(commandIcon(trade))));
+        }
+
+        // 返回
+        pane.setElement(SLOT_BACK, Element.item(Item.builder()
+                .setItemProviderConstant(staticItem(Material.BARRIER, "&c返回 &7(ESC)", List.of("&7回到交易界面")))
+                .addClickHandler(click -> click.window().backOrClose())
+                .build()));
         return pane;
     }
 
-    private Item gridItem() {
-        return Item.builder()
-                .setItemProvider(context -> {
-                    ItemStack ingredient = ingredient(context.windowSlot);
-                    return ingredient == null || ingredient.getType().isAir() ? border() : ingredient.clone();
-                })
-                .dependsOn(index)
-                .build();
-    }
-
-    private Item resultItem() {
-        return Item.builder()
-                .setItemProvider(context -> resultIcon(current()))
-                .dependsOn(index)
-                .build();
-    }
-
-    private Item backItem() {
-        return Item.builder()
-                .setItemProviderConstant(staticItem(Material.BARRIER, "&c返回 &7(ESC)", List.of("&7回到交易界面")))
-                .addClickHandler(click -> click.window().backOrClose())
-                .build();
-    }
-
-    private Item switchItem(boolean next) {
-        return Item.builder()
-                .setItemProvider(context -> {
-                    if (recipes.size() <= 1) {
-                        return border();
-                    }
-                    return staticItem(Material.SPECTRAL_ARROW, next ? "&e下一个配方" : "&e上一个配方",
-                            List.of("&7第 " + (index.get() + 1) + " / " + recipes.size() + " 个"));
-                })
-                .dependsOn(index)
-                .addClickHandler(click -> {
-                    if (recipes.size() > 1) {
-                        index.update(value -> next
-                                ? (value + 1) % recipes.size()
-                                : (value - 1 + recipes.size()) % recipes.size());
-                    }
-                })
-                .build();
-    }
-
-    private Recipe current() {
-        return recipes.get(index.get());
-    }
-
-    // ---------------- 配方解析 ----------------
-
-    /** 取一笔物品的合成配方（合成优先，其次烧炼/切石/锻造）；失败返回空列表。 */
-    static List<Recipe> find(ItemStack target) {
-        if (target == null || target.getType().isAir()) {
-            return List.of();
-        }
-        try {
-            List<Recipe> all = new ArrayList<>(Bukkit.getRecipesFor(target));
-            all.sort(Comparator.comparingInt(RecipeGui::priority));
-            return all;
-        } catch (Throwable t) {
-            return List.of();
-        }
-    }
-
-    private static int priority(Recipe recipe) {
-        if (recipe instanceof ShapedRecipe) {
-            return 0;
-        }
-        if (recipe instanceof ShapelessRecipe) {
-            return 1;
-        }
-        if (recipe instanceof TransmuteRecipe) {
-            return 2;
-        }
-        if (recipe instanceof CookingRecipe<?>) {
-            return 3;
-        }
-        if (recipe instanceof StonecuttingRecipe) {
-            return 4;
-        }
-        if (recipe instanceof SmithingRecipe) {
-            return 5;
-        }
-        return 6;
-    }
-
-    /** 当前配方在某个 3×3 工作格（gridPos 0..8）里的原料，没有则 null。 */
-    @SuppressWarnings("deprecation")
-    private ItemStack ingredient(int windowSlot) {
-        int gridPos = gridIndex(windowSlot);
-        if (gridPos < 0) {
-            return null;
-        }
-        Recipe recipe = current();
-        if (recipe instanceof ShapedRecipe shaped) {
-            String[] shape = shaped.getShape();
-            Map<Character, RecipeChoice> choices = shaped.getChoiceMap();
-            Map<Character, ItemStack> items = choices.isEmpty() ? shaped.getIngredientMap() : null;
-            int row = gridPos / 3;
-            int col = gridPos % 3;
-            String line = row < shape.length && shape[row] != null ? shape[row] : "";
-            char c = col < line.length() ? line.charAt(col) : ' ';
-            if (c == ' ') {
-                return null;
-            }
-            if (!choices.isEmpty()) {
-                return choiceStack(choices.get(c));
-            }
-            return items == null ? null : items.get(c);
-        }
-        if (recipe instanceof ShapelessRecipe shapeless) {
-            List<RecipeChoice> choices = shapeless.getChoiceList();
-            if (choices.isEmpty()) {
-                List<ItemStack> items = shapeless.getIngredientList();
-                return gridPos < items.size() ? items.get(gridPos) : null;
-            }
-            return gridPos < choices.size() ? choiceStack(choices.get(gridPos)) : null;
-        }
-        if (recipe instanceof TransmuteRecipe transmute) {
-            if (gridPos == 3) {
-                return choiceStack(transmute.getInput());
-            }
-            if (gridPos == 5) {
-                return choiceStack(transmute.getMaterial());
-            }
-            return null;
-        }
-        if (recipe instanceof CookingRecipe<?> cooking) {
-            return gridPos == 4 ? choiceStack(cooking.getInputChoice()) : null;
-        }
-        if (recipe instanceof StonecuttingRecipe stonecutting) {
-            return gridPos == 4 ? choiceStack(stonecutting.getInputChoice()) : null;
-        }
-        if (recipe instanceof SmithingRecipe smithing) {
-            if (gridPos == 3) {
-                if (smithing instanceof SmithingTransformRecipe transform) {
-                    return choiceStack(transform.getTemplate());
-                }
-                if (smithing instanceof SmithingTrimRecipe trim) {
-                    return choiceStack(trim.getTemplate());
-                }
-                return null;
-            }
-            if (gridPos == 4) {
-                return choiceStack(smithing.getBase());
-            }
-            if (gridPos == 5) {
-                return choiceStack(smithing.getAddition());
-            }
-        }
-        return null;
-    }
-
-    private static int gridIndex(int windowSlot) {
-        for (int i = 0; i < GRID.length; i++) {
-            if (GRID[i] == windowSlot) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    private static ItemStack choiceStack(RecipeChoice choice) {
-        if (choice == null) {
-            return null;
-        }
-        try {
-            return choice.getItemStack();
-        } catch (Throwable t) {
-            // 某些 RecipeChoice 取不到展示物品，忽略该格。
-            return null;
-        }
-    }
-
-    private ItemStack resultIcon(Recipe recipe) {
-        ItemStack result = recipe.getResult().clone();
-        ItemMeta meta = result.getItemMeta();
+    private ItemStack inputIcon(LiuTrade plugin, ItemSpec spec) {
+        ItemStack sample = spec.iconSample(plugin.soulSpace());
+        ItemStack icon = sample == null || sample.getType().isAir()
+                ? new ItemStack(Material.PAPER)
+                : sample.clone();
+        icon.setAmount(Math.min(spec.amount, icon.getMaxStackSize()));
+        ItemMeta meta = icon.getItemMeta();
         if (meta != null) {
+            meta.setDisplayName(Msg.color("&f" + plugin.specName(spec)));
             List<String> lore = new ArrayList<>();
-            if (recipes.size() > 1) {
-                lore.add(Msg.color("&8配方 " + (index.get() + 1) + " / " + recipes.size()));
+            lore.add(Msg.color("&7需要 &f" + spec.amount + " &7个"));
+            if (!spec.nativeRepresentable()) {
+                lore.add(Msg.color("&8（按规则匹配）"));
             }
-            lore.add(Msg.color("&7产出 &f" + result.getAmount() + " &7个"));
             meta.setLore(lore);
-            result.setItemMeta(meta);
+            icon.setItemMeta(meta);
         }
-        return result;
+        return icon;
     }
 
-    private static ItemStack border() {
+    private ItemStack outputIcon(ItemStack stack) {
+        ItemStack icon = stack.clone();
+        ItemMeta meta = icon.getItemMeta();
+        if (meta != null) {
+            List<String> lore = meta.hasLore() && meta.getLore() != null
+                    ? new ArrayList<>(meta.getLore())
+                    : new ArrayList<>();
+            lore.add(Msg.color("&7产出 &f" + stack.getAmount() + " &7个"));
+            meta.setLore(lore);
+            icon.setItemMeta(meta);
+        }
+        return icon;
+    }
+
+    private ItemStack arrow(int outputCount, boolean commands) {
+        List<String> lore = new ArrayList<>();
+        lore.add(Msg.color("&8左侧：需要放入的物品"));
+        lore.add(Msg.color("&8右侧：可以换到的产出"));
+        if (outputCount > OUTPUT_SLOTS.length) {
+            lore.add(Msg.color("&8（共 " + outputCount + " 个产出，只展示前 " + OUTPUT_SLOTS.length + " 个）"));
+        } else if (commands && outputCount == 0) {
+            lore.add(Msg.color("&8产出为指令（见上方命令块）"));
+        }
+        return staticItem(Material.ARROW, "&7→ &f输入换产出", lore);
+    }
+
+    private ItemStack commandIcon(Trade trade) {
+        List<String> lore = new ArrayList<>();
+        lore.add(Msg.color("&7交易成功后以控制台执行："));
+        for (String command : trade.commands) {
+            lore.add(Msg.color("  &8· &f" + command));
+        }
+        return staticItem(Material.COMMAND_BLOCK, "&a指令产出", lore);
+    }
+
+    private ItemStack border() {
         return staticItem(Material.GRAY_STAINED_GLASS_PANE, " ", null);
+    }
+
+    private static String tradeName(Trade trade) {
+        return trade.displayName != null ? trade.displayName : trade.name;
     }
 
     private static ItemStack staticItem(Material material, String name, List<String> lore) {

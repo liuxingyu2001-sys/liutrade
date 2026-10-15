@@ -250,7 +250,7 @@ final class TradeGui {
                     Msg.color("&7② 也可以自己把物品放进下面的输入槽"),
                     Msg.color("&7③ &f产出格 &7出现物品后，&f左键 &7即可交易"),
                     Msg.color("&7④ &fShift+左键 &7产出格：一次交易全部"),
-                    Msg.color("&7⑤ &f右键 &7交易/产出：查看合成配方"),
+                    Msg.color("&7⑤ &f右键 &7交易/产出：查看交易配方"),
                     Msg.color("&7⑥ 左右 &f箭头 &7翻页")));
             item.setItemMeta(meta);
         }
