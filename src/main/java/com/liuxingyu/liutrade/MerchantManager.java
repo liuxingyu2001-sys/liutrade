@@ -105,6 +105,7 @@ final class MerchantManager {
     private Trade parseTrade(ConfigurationSection section, String id, String key) {
         List<ItemSpec> inputs = new ArrayList<>();
         List<ItemSpec> outputs = new ArrayList<>();
+        List<String> commands = new ArrayList<>();
         for (Object raw : list(section.get("inputs"), section.get("input"))) {
             ItemSpec spec = spec(raw);
             if (spec != null) {
@@ -112,11 +113,27 @@ final class MerchantManager {
             }
         }
         for (Object raw : list(section.get("outputs"), section.get("output"))) {
-            ItemSpec spec = spec(raw);
-            if (spec != null) {
-                outputs.add(spec);
+            Map<String, Object> map = ItemBuilder.asMap(raw);
+            if (map != null && (map.containsKey("commands") || map.containsKey("command"))) {
+                // 产出条目可以是「指令产出」：commands: [...]（也可与物品字段共存）。
+                Object rawCommands = map.containsKey("commands") ? map.get("commands") : map.get("command");
+                commands.addAll(stringList(rawCommands));
+                Map<String, Object> itemMap = new LinkedHashMap<>(map);
+                itemMap.remove("commands");
+                itemMap.remove("command");
+                ItemSpec spec = spec(itemMap);
+                if (spec != null) {
+                    outputs.add(spec);
+                }
+            } else {
+                ItemSpec spec = spec(raw);
+                if (spec != null) {
+                    outputs.add(spec);
+                }
             }
         }
+        // 也允许把 commands 写在交易层级
+        commands.addAll(stringList(section.get("commands")));
         if (inputs.isEmpty() || inputs.size() > Trade.MAX_INPUTS) {
             warn("交易 " + id + " 的 inputs 必须为 1~" + Trade.MAX_INPUTS + " 项，已跳过。");
             return null;
@@ -128,19 +145,22 @@ final class MerchantManager {
                         + " 超过单槽上限 64，将永远无法完成，请拆成多笔或减小数量。");
             }
         }
-        boolean convert = booleanValue(section.get("convert"), outputs.isEmpty());
+        boolean hasItem = !outputs.isEmpty();
+        boolean hasCommand = !commands.isEmpty();
+        boolean convert = booleanValue(section.get("convert"), !hasItem && !hasCommand);
         if (convert && inputs.size() > 1) {
             warn("交易 " + id + " 使用 convert 时必须只有 1 个输入，已跳过。");
             return null;
         }
-        if (!convert && outputs.isEmpty()) {
-            warn("交易 " + id + " 既没有 outputs 也没有 convert: true，已跳过。");
+        if (!convert && !hasItem && !hasCommand) {
+            warn("交易 " + id + " 既没有 outputs/commands 也没有 convert: true，已跳过。");
             return null;
         }
         Trade trade = new Trade(id);
         trade.key = key;
         trade.inputs = Collections.unmodifiableList(inputs);
         trade.outputs = outputs.isEmpty() ? null : Collections.unmodifiableList(outputs);
+        trade.commands = Collections.unmodifiableList(commands);
         trade.convert = convert;
         trade.description = stringList(section.get("description"));
         trade.display = spec(section.get("display"));

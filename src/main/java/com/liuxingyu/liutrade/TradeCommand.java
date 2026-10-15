@@ -126,6 +126,10 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.prefixed("trade-not-found", "%id%", args[2]));
             return true;
         }
+        if (!trade.hasItemOutput()) {
+            sender.sendMessage(Msg.color("&c这笔交易没有物品产出（只有指令），不能 give；请直接执行交易。"));
+            return true;
+        }
         Player target = resolveTarget(sender, args.length >= 4 ? args[3] : null);
         if (target == null) {
             return true;

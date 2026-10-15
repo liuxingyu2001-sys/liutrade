@@ -140,6 +140,7 @@ final class TradeListener implements Listener {
         Trade trade = session.tradeAt(inventory.getSelectedRecipeIndex());
         if (trade != null) {
             session.grantExtras(player, trade, inventory.getItem(0));
+            plugin.service().runCommands(player, trade, 1);
             if (plugin.config().feedback) {
                 player.sendMessage(plugin.prefixed("trade-success",
                         "%name%", Msg.color(trade.name),

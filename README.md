@@ -148,6 +148,30 @@ components:
 - `outputs:`：显式列出产出，**支持多条**（`material` / `material`+`components` / `library_id` / `bytes`）。
   自定义界面会依次发放全部产出；原生村民界面每笔只能给一个结果，故第一个作为配方结果、
   其余在购买成功后补发。
+- `outputs` 的条目也支持 `commands:`（指令产出）：交易成功时以**控制台身份**执行这些指令，
+  可以用它发物品/货币/权限等。也可把 `commands:` 直接写在交易层级。占位符：
+  `%player%`（玩家名）、`%uuid%`、`%times%`（本次交易次数，仅含 `%times%` 的指令只执行一次，
+  其余按次数逐遍执行）。纯指令产出（无物品）**只在自定义界面可用**，原生村民界面会跳过并提示。
+
+```yaml
+trades:
+  买钻石:
+    inputs:
+      - material: DIAMOND
+        amount: 1
+    outputs:
+      - commands:
+          - "give %player% emerald %times%"
+          - "eco give %player% 100"
+  # 也可物品与指令共存：
+  混合:
+    inputs:
+      - material: IRON_INGOT
+    outputs:
+      - material: GOLD_INGOT
+        commands:
+          - "say %player% 换到了金锭"
+```
 
 ## 界面
 

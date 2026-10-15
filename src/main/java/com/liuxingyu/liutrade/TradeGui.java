@@ -225,7 +225,11 @@ final class TradeGui implements InventoryHolder {
         }
         int batches = batches(trade);
         List<ItemStack> previews = previews(trade);
+        boolean commands = trade.hasCommands();
         if (previews.isEmpty()) {
+            if (commands) {
+                return commandOutputIcon(trade, batches);
+            }
             return button(Material.BARRIER, "&c无法完成交易",
                     List.of(Msg.color("&7物品数量不足，或转换规则未命中")));
         }
@@ -241,6 +245,9 @@ final class TradeGui implements InventoryHolder {
                 ItemStack extra = previews.get(i);
                 lore.add(Msg.color("&7额外产出 &f" + plugin.itemName(extra) + " &7x" + extra.getAmount()));
             }
+            if (commands) {
+                lore.add(Msg.color("&7并执行 &f" + trade.commands.size() + " &7条指令"));
+            }
             lore.add("");
             lore.add(Msg.color("&a左键 &7：交易 1 次"));
             lore.add(Msg.color("&aShift+左键 &7：全部 &f" + batches + " &7次"));
@@ -248,6 +255,23 @@ final class TradeGui implements InventoryHolder {
             result.setItemMeta(meta);
         }
         return result;
+    }
+
+    /** 纯指令产出（无物品）时的产出格。 */
+    private ItemStack commandOutputIcon(Trade trade, int batches) {
+        List<String> lore = new ArrayList<>();
+        lore.add(Msg.color("&7需要："));
+        for (ItemSpec input : trade.inputs) {
+            lore.add(Msg.color("  &8· &f" + specName(input) + " &7x" + input.amount));
+        }
+        lore.add(Msg.color("&7获得："));
+        for (String command : trade.commands) {
+            lore.add(Msg.color("  &8· &f" + command));
+        }
+        lore.add("");
+        lore.add(Msg.color("&a左键 &7：交易 1 次"));
+        lore.add(Msg.color("&aShift+左键 &7：全部 &f" + batches + " &7次"));
+        return button(Material.COMMAND_BLOCK, "&a指令产出", lore);
     }
 
     /** 交易列表里的一笔交易。 */
@@ -273,11 +297,18 @@ final class TradeGui implements InventoryHolder {
         lore.add(Msg.color("&7获得："));
         List<ItemStack> previews = previews(trade);
         if (previews.isEmpty()) {
-            lore.add(Msg.color("  &8· &c" + (trade.convert ? "转换规则未命中" : "无法解析")));
+            if (trade.hasCommands()) {
+                lore.add(Msg.color("  &8· &a执行 " + trade.commands.size() + " 条指令"));
+            } else {
+                lore.add(Msg.color("  &8· &c" + (trade.convert ? "转换规则未命中" : "无法解析")));
+            }
         } else {
             for (ItemStack pv : previews) {
                 lore.add(Msg.color("  &8· &f" + plugin.itemName(pv) + " &7x" + pv.getAmount()
                         + (trade.convert ? " &8(转换)" : "")));
+            }
+            if (trade.hasCommands()) {
+                lore.add(Msg.color("  &8· &a执行 " + trade.commands.size() + " 条指令"));
             }
         }
         int batches = batches(trade);

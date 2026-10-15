@@ -6,7 +6,7 @@
 
   <groupId>com.liuxingyu</groupId>
   <artifactId>LiuTrade</artifactId>
-  <version>0.3.6</version>
+  <version>0.3.7</version>
   <packaging>jar</packaging>
   <name>LiuTrade</name>
   <description>虚拟村民交易 - 读取独立 YAML，放入物品取出新物品（依赖 SoulSpace 规则/物品库）</description>

@@ -1,5 +1,7 @@
 package com.liuxingyu.liutrade;
 
+import org.bukkit.Bukkit;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.ItemStack;
@@ -52,14 +54,16 @@ final class TradeService {
         }
         Inventory inventory = gui.getInventory();
         List<ItemStack> outputs = new ArrayList<>();
-        for (int i = 0; i < times; i++) {
-            ItemStack subject = inventory.getItem(TradeGui.inputSlot(0));
-            List<ItemStack> produced = produceAll(player, trade, subject);
-            if (produced.isEmpty()) {
-                player.sendMessage(plugin.prefixed(trade.convert ? "soulspace-missing" : "trade-fail"));
-                return false;
+        if (trade.hasItemOutput()) {
+            for (int i = 0; i < times; i++) {
+                ItemStack subject = inventory.getItem(TradeGui.inputSlot(0));
+                List<ItemStack> produced = produceAll(player, trade, subject);
+                if (produced.isEmpty()) {
+                    player.sendMessage(plugin.prefixed(trade.convert ? "soulspace-missing" : "trade-fail"));
+                    return false;
+                }
+                outputs.addAll(produced);
             }
-            outputs.addAll(produced);
         }
         for (int i = 0; i < trade.inputs.size(); i++) {
             int slot = TradeGui.inputSlot(i);
@@ -75,6 +79,7 @@ final class TradeService {
         for (ItemStack output : outputs) {
             TradeGui.giveOrDrop(player, output);
         }
+        runCommands(player, trade, times);
         if (plugin.config().feedback) {
             player.sendMessage(plugin.prefixed("trade-success",
                     "%name%", Msg.color(trade.name),
@@ -85,11 +90,53 @@ final class TradeService {
     }
 
     /**
+     * 执行一笔交易配置的 commands（以控制台身份）。占位符：{@code %player%} / {@code %uuid%} / {@code %times%}。
+     *
+     * <p>带 {@code %times%} 的指令只执行一次并填入总次数（适合 {@code /give ... %times%}）；
+     * 不带的按次数执行多遍。
+     *
+     * @return 执行失败的指令条数
+     */
+    int runCommands(Player player, Trade trade, int times) {
+        if (trade == null || !trade.hasCommands()) {
+            return 0;
+        }
+        int failed = 0;
+        CommandSender console = Bukkit.getConsoleSender();
+        for (String raw : trade.commands) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            int rounds = raw.contains("%times%") ? 1 : Math.max(1, times);
+            for (int i = 0; i < rounds; i++) {
+                String command = raw
+                        .replace("%player%", player.getName())
+                        .replace("%uuid%", player.getUniqueId().toString())
+                        .replace("%times%", String.valueOf(times));
+                try {
+                    if (!Bukkit.dispatchCommand(console, command)) {
+                        failed++;
+                        plugin.getLogger().warning("交易 " + trade.id + " 的指令执行失败（返回 false）：" + command);
+                    }
+                } catch (Throwable t) {
+                    failed++;
+                    plugin.getLogger().warning("交易 " + trade.id + " 的指令执行异常：" + command + "（" + t + "）");
+                }
+            }
+        }
+        return failed;
+    }
+
+    /**
      * 计算一笔交易一次的全部产出（按顺序）：显式 {@code outputs} 逐条构建，
      * 或 {@code convert: true} 时经 SoulSpace 转换规则。
      */
     List<ItemStack> produceAll(Player player, Trade trade, ItemStack subject) {
         List<ItemStack> results = new ArrayList<>();
+        if (!trade.hasItemOutput()) {
+            // 纯指令产出：没有物品结果（避免误走 convert 转换规则）。
+            return results;
+        }
         if (trade.outputs != null) {
             for (ItemSpec spec : trade.outputs) {
                 ItemStack sample = spec.sample(plugin.soulSpace());

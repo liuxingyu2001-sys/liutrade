@@ -22,10 +22,22 @@ final class Trade {
     List<ItemSpec> inputs;
     /** 显式产出；为 null 表示用 {@link #convert} 走 SoulSpace 转换规则。 */
     List<ItemSpec> outputs;
+    /** 产出时以控制台身份执行的指令（{@code %player%}/{@code %uuid%}/{@code %times%} 可替换）；可为空。 */
+    List<String> commands = java.util.Collections.emptyList();
     boolean convert;
     String permission = "";
 
     Trade(String id) {
         this.id = id;
+    }
+
+    /** 是否有物品类产出（显式 {@code outputs} 或 {@code convert} 转换）。 */
+    boolean hasItemOutput() {
+        return convert || (outputs != null && !outputs.isEmpty());
+    }
+
+    /** 是否配置了指令产出。 */
+    boolean hasCommands() {
+        return commands != null && !commands.isEmpty();
     }
 }

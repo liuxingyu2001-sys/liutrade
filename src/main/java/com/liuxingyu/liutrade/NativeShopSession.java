@@ -61,6 +61,12 @@ final class NativeShopSession {
                     + "（可改用 settings.gui-mode: custom）。");
             return null;
         }
+        if (!trade.hasItemOutput()) {
+            plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name
+                    + "」只有指令产出，原生村民界面无法表示，已跳过"
+                    + "（可改用 settings.gui-mode: custom）。");
+            return null;
+        }
         ItemStack result = plugin.service().preview(player, trade);
         if (result == null || result.getType().isAir()) {
             plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name

@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -204,5 +205,42 @@ class MerchantManagerTest {
         assertEquals("甲交易", merchant.findTrade("甲").key);
         assertNull(merchant.findTrade("3"));
         assertNull(merchant.findTrade("不存在"));
+    }
+
+    @Test
+    void parsesCommandAndMixedOutputs() throws Exception {
+        Merchant merchant = parse("""
+                name: "店"
+                trades:
+                  纯指令:
+                    inputs:
+                      - material: DIAMOND
+                    outputs:
+                      - commands:
+                          - "give %player% netherite_ingot 1"
+                          - "eco give %player% 100 %times%"
+                  物品加指令:
+                    inputs:
+                      - material: IRON_INGOT
+                    outputs:
+                      - material: GOLD_INGOT
+                        commands:
+                          - "say hi %player%"
+                """);
+        assertNotNull(merchant);
+        Trade commandOnly = merchant.findTrade("纯指令");
+        assertNotNull(commandOnly);
+        assertFalse(commandOnly.hasItemOutput());
+        assertTrue(commandOnly.hasCommands());
+        assertEquals(2, commandOnly.commands.size());
+        assertFalse(commandOnly.convert);
+
+        Trade mixed = merchant.findTrade("物品加指令");
+        assertNotNull(mixed);
+        assertTrue(mixed.hasItemOutput());
+        assertEquals(1, mixed.outputs.size());
+        assertEquals("GOLD_INGOT", mixed.outputs.get(0).rule.get("material"));
+        assertTrue(mixed.hasCommands());
+        assertEquals(1, mixed.commands.size());
     }
 }

@@ -30,7 +30,8 @@
 #
 # 每笔交易 = 1~6 个输入 → 1 个或多个产出（原生村民界面每笔最多 2 个输入）：
 #   · convert: true  —— 产出由 SoulSpace 的 convert/ 转换规则决定（仅限单输入）
-#   · outputs       —— 显式列出产出
+#   · outputs       —— 显式列出产出；条目也支持 commands:（指令产出，控制台身份执行，
+#                      占位符 %player% / %uuid% / %times%）。纯指令产出仅自定义界面可用。
 name: "&6铁匠"
 title: "&8&l铁匠的交易"
 npc: ""            # Citizens NPC 的 id（数字）或名字；留空则只能用 /liutrade open 打开
@@ -105,3 +106,21 @@ trades:
         amount: 4
     outputs:
       - material: NETHERITE_INGOT
+  指令产出:
+    name: "&f钻石 &7→ &a绿宝石（指令发放）"
+    inputs:
+      - material: DIAMOND
+        amount: 1
+    outputs:
+      # 以控制台身份执行；%times% 只执行一次并填入交易次数，%player% 为玩家名
+      - commands:
+          - "give %player% minecraft:emerald %times%"
+          - "eco give %player% 100"
+  物品加指令:
+    name: "&f铁锭 &7→ &6金锭 &7+ 提示"
+    inputs:
+      - material: IRON_INGOT
+    outputs:
+      - material: GOLD_INGOT
+        commands:
+          - "say %player% 完成了一笔交易"
