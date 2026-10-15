@@ -151,10 +151,7 @@ final class ItemBuilder {
     }
 
     private static void applyCustomData(ItemMeta meta, Object value) {
-        Map<String, Object> map = asMap(value);
-        if (map == null) {
-            map = Snbt.parseCompound(str(value));
-        }
+        Map<String, Object> map = customDataMap(value);
         if (map == null || map.isEmpty()) {
             return;
         }
@@ -165,6 +162,39 @@ final class ItemBuilder {
             // 键名非法等异常不应把整个界面渲染/点击事件拖下水。
             LOGGER.warning("写入 custom_data 失败（已忽略）：" + t);
         }
+    }
+
+    /**
+     * 解析 {@code custom_data}：支持嵌套 map / SNBT 字符串，并兼容 CE/其它插件常见的
+     * {@code PublicBukkitValues} 外层包裹。
+     *
+     * <p>Bukkit 的 PDC 本身就会自动包一层 {@code PublicBukkitValues}；若配置里又显式写了这层，
+     * 老实现会把它当成普通键、产出一个多余的 {@code liutrade:publicbukkitvalues}，
+     * 真正的 PDC 键被多嵌一层而导致规则匹配失效。这里统一解开该层。
+     */
+    static Map<String, Object> customDataMap(Object value) {
+        Map<String, Object> map = asMap(value);
+        if (map == null) {
+            map = Snbt.parseCompound(str(value));
+        }
+        if (map == null || map.isEmpty()) {
+            return map;
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : map.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase("PublicBukkitValues")) {
+                Map<String, Object> inner = asMap(entry.getValue());
+                if (inner == null) {
+                    inner = Snbt.parseCompound(str(entry.getValue()));
+                }
+                if (inner != null) {
+                    out.putAll(inner);
+                    continue;
+                }
+            }
+            out.put(entry.getKey(), entry.getValue());
+        }
+        return out;
     }
 
     private static void write(PersistentDataContainer container, Map<String, Object> map) {

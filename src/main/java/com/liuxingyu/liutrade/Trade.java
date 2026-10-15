@@ -9,6 +9,8 @@ final class Trade {
     static final int MAX_INPUTS = 6;
 
     final String id;
+    /** 交易在 YAML 里的键（用于 /liutrade give 按键定位）。 */
+    String key = "";
     /** 交易名（聊天提示/默认图标名）。 */
     String name;
     /** 仅用于交易列表图标的名字（为空则用 {@link #name}）。 */

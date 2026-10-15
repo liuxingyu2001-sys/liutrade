@@ -40,6 +40,9 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
         if (args.length >= 1 && args[0].equalsIgnoreCase("item")) {
             return item(sender);
         }
+        if (args.length >= 1 && args[0].equalsIgnoreCase("give")) {
+            return give(sender, args);
+        }
 
         String id = null;
         String playerArg = null;
@@ -103,6 +106,69 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
         return true;
     }
 
+    /** /liutrade give <商店> <交易> [玩家] [份数]：把交易的配置产出直接发给玩家。 */
+    private boolean give(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("liutrade.admin.give")) {
+            sender.sendMessage(plugin.prefixed("no-permission"));
+            return true;
+        }
+        if (args.length < 3) {
+            sender.sendMessage(Msg.color("&c用法：&f/liutrade give <商店> <交易> [玩家] [份数]"));
+            return true;
+        }
+        Merchant merchant = plugin.manager().get(args[1]);
+        if (merchant == null) {
+            sender.sendMessage(plugin.prefixed("merchant-not-found", "%name%", args[1]));
+            return true;
+        }
+        Trade trade = merchant.findTrade(args[2]);
+        if (trade == null) {
+            sender.sendMessage(plugin.prefixed("trade-not-found", "%id%", args[2]));
+            return true;
+        }
+        Player target = resolveTarget(sender, args.length >= 4 ? args[3] : null);
+        if (target == null) {
+            return true;
+        }
+        int count = 1;
+        if (args.length >= 5) {
+            try {
+                count = Integer.parseInt(args[4]);
+            } catch (NumberFormatException e) {
+                count = 0;
+            }
+            if (count <= 0) {
+                sender.sendMessage(Msg.color("&c份数必须是正整数。"));
+                return true;
+            }
+            count = Math.min(count, 2304);
+        }
+        List<ItemStack> outputs = plugin.service().produceAll(target, trade, null);
+        if (outputs.isEmpty()) {
+            sender.sendMessage(plugin.prefixed("trade-fail"));
+            return true;
+        }
+        for (ItemStack output : outputs) {
+            giveStacked(target, output, output.getAmount() * count);
+        }
+        sender.sendMessage(Msg.color("&a已给 &f" + target.getName() + " &a发放 &f" + merchant.id + " / "
+                + (trade.key == null || trade.key.isBlank() ? trade.name : trade.key)
+                + " &a的产出 x" + count + "。"));
+        return true;
+    }
+
+    /** 按最大堆叠数拆成多组后发给玩家（放不下则原地掉落）。 */
+    private static void giveStacked(Player target, ItemStack item, int total) {
+        int max = Math.max(1, item.getMaxStackSize());
+        while (total > 0) {
+            ItemStack stack = item.clone();
+            int take = Math.min(total, max);
+            stack.setAmount(take);
+            TradeGui.giveOrDrop(target, stack);
+            total -= take;
+        }
+    }
+
     /** 解析「为谁打开」：控制台必须指定玩家；玩家为他人打开需要 liutrade.admin。 */
     private Player resolveTarget(CommandSender sender, String name) {
         if (name == null) {
@@ -152,7 +218,7 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         List<String> out = new ArrayList<>();
         if (args.length == 1) {
-            for (String option : new String[]{"open", "list", "reload", "item"}) {
+            for (String option : new String[]{"open", "list", "reload", "item", "give"}) {
                 if (option.startsWith(args[0].toLowerCase())) {
                     out.add(option);
                 }
@@ -163,7 +229,7 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
                 }
             }
         } else if (args.length == 2) {
-            if (args[0].equalsIgnoreCase("open")) {
+            if (args[0].equalsIgnoreCase("open") || args[0].equalsIgnoreCase("give")) {
                 for (Merchant merchant : plugin.merchants()) {
                     if (merchant.id.toLowerCase().startsWith(args[1].toLowerCase())) {
                         out.add(merchant.id);
@@ -174,6 +240,27 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
                     if (player.getName().toLowerCase().startsWith(args[1].toLowerCase())) {
                         out.add(player.getName());
                     }
+                }
+            }
+        } else if (args.length == 3 && args[0].equalsIgnoreCase("give") && sender.hasPermission("liutrade.admin.give")) {
+            Merchant merchant = plugin.manager().get(args[1]);
+            if (merchant != null) {
+                for (Trade trade : merchant.trades) {
+                    if (trade.key != null && trade.key.toLowerCase().startsWith(args[2].toLowerCase())) {
+                        out.add(trade.key);
+                    }
+                }
+            }
+        } else if (args.length == 4 && args[0].equalsIgnoreCase("give") && sender.hasPermission("liutrade.admin.give")) {
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (player.getName().toLowerCase().startsWith(args[3].toLowerCase())) {
+                    out.add(player.getName());
+                }
+            }
+        } else if (args.length == 5 && args[0].equalsIgnoreCase("give") && sender.hasPermission("liutrade.admin.give")) {
+            for (String n : new String[]{"1", "8", "16", "64"}) {
+                if (n.startsWith(args[4])) {
+                    out.add(n);
                 }
             }
         } else if (args.length == 3 && args[0].equalsIgnoreCase("open")

@@ -31,14 +31,17 @@
 | `/liutrade list` | 列出全部商店（控制台可用） |
 | `/liutrade reload` | 重载全部商店配置（控制台可用） |
 | `/liutrade item` | 把手持物品导出成 `bytes:` 配置行（控制台也会打印，便于复制） |
+| `/liutrade give <商店> <交易> [玩家] [份数]` | 直接把某笔交易的**配置产出**发给玩家（验证/发放用）；控制台必须指定玩家 |
 
 `<商店>` = 文件相对路径去掉 `.yml`（例如 `blacksmith`、`子目录/xxx`）。
+`<交易>` = 交易在 YAML 里的键、1 开始的序号（`1`/`2`…）或交易名。
 
 | 权限 | 默认 | 说明 |
 | --- | --- | --- |
 | `liutrade.use` | true | 打开交易商店 |
 | `liutrade.admin` | op | 为其他玩家打开商店 |
 | `liutrade.admin.reload` | op | 重载配置 |
+| `liutrade.admin.give` | op | 直接发放交易的产出物品 |
 
 单笔交易还可在 YAML 里写 `permission:` 限制、`description:` 写界面说明。
 
@@ -118,6 +121,22 @@ SoulSpace **2.5.1+**（`SoulSpaceApi.displayName`）；未装/旧版则退回物
 `custom_model_data` / `enchantments`(或 `stored_enchantments`) / `unbreakable` / `rarity` /
 `max_stack_size` / `fire_resistant` / `hide_tooltip` / `enchantment_glint_override` / `damage` /
 `dyed_color`，以及 `custom_data`（嵌套 map 或 SNBT 字符串，写入 PDC，可被 SoulSpace 的 `pdc` 规则匹配）。
+
+`custom_data` 直接写 PDC 键即可；从 CraftEngine / 其它插件复制配置时常见的显式外层
+`PublicBukkitValues:` 也能识别（会自动解开，不会再产出一个多余的
+`liutrade:publicbukkitvalues`，导致真正的键多嵌一层、规则匹配不到）：
+
+```yaml
+components:
+  custom_data:
+    liutrade:coupon: true     # 直接写法（推荐）
+    tier: 3
+  # 等价写法：
+  # custom_data:
+  #   PublicBukkitValues:
+  #     liutrade:coupon: true
+  #     tier: 3
+```
 
 > 要产出 **CraftEngine / MythicMobs / ItemEdit** 物品，用 `library_id: "ce:..."`。
 > 其它任意组件（无法用 `components` 表达的），主手持物品执行 `/liutrade item`，把输出的

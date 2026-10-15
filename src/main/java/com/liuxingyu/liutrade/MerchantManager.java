@@ -81,7 +81,7 @@ final class MerchantManager {
                     index++;
                     continue;
                 }
-                Trade trade = parseTrade(section, id + "#" + key + "#" + index);
+                Trade trade = parseTrade(section, id + "#" + key + "#" + index, key);
                 if (trade != null) {
                     trades.add(trade);
                 }
@@ -102,7 +102,7 @@ final class MerchantManager {
         return merchant;
     }
 
-    private Trade parseTrade(ConfigurationSection section, String id) {
+    private Trade parseTrade(ConfigurationSection section, String id, String key) {
         List<ItemSpec> inputs = new ArrayList<>();
         List<ItemSpec> outputs = new ArrayList<>();
         for (Object raw : list(section.get("inputs"), section.get("input"))) {
@@ -138,6 +138,7 @@ final class MerchantManager {
             return null;
         }
         Trade trade = new Trade(id);
+        trade.key = key;
         trade.inputs = Collections.unmodifiableList(inputs);
         trade.outputs = outputs.isEmpty() ? null : Collections.unmodifiableList(outputs);
         trade.convert = convert;

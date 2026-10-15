@@ -179,4 +179,30 @@ class MerchantManagerTest {
         assertNotNull(trade.display);
         assertEquals("ce:ns:icon", trade.display.libraryId);
     }
+
+    @Test
+    void findsTradeByKeyIndexAndName() throws Exception {
+        Merchant merchant = parse("""
+                name: "店"
+                trades:
+                  甲交易:
+                    name: "&f甲"
+                    inputs:
+                      - material: IRON_INGOT
+                    outputs:
+                      - material: GOLD_INGOT
+                  乙交易:
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                """);
+        assertNotNull(merchant);
+        assertNotNull(merchant.findTrade("甲交易"));
+        assertEquals("甲交易", merchant.findTrade("1").key);
+        assertEquals("乙交易", merchant.findTrade("2").key);
+        assertEquals("甲交易", merchant.findTrade("甲").key);
+        assertNull(merchant.findTrade("3"));
+        assertNull(merchant.findTrade("不存在"));
+    }
 }

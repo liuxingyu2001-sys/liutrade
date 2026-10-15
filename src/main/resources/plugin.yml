@@ -9,7 +9,7 @@ softdepend: [SoulSpace, Citizens]
 commands:
   liutrade:
     description: 交易商店（打开 / 列表 / 重载）
-    usage: /liutrade [open <商店> [玩家] | list | reload | item]
+    usage: /liutrade [open <商店> [玩家] | list | reload | item | give <商店> <交易> [玩家] [份数]]
     aliases: [lt, trade]
 permissions:
   liutrade.use:
@@ -20,6 +20,10 @@ permissions:
     default: op
     children:
       liutrade.admin.reload: true
+      liutrade.admin.give: true
   liutrade.admin.reload:
     description: 重载交易配置
+    default: op
+  liutrade.admin.give:
+    description: 直接发放交易的产出物品
     default: op

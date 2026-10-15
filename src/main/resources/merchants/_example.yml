@@ -13,8 +13,12 @@
 #                          unbreakable: true
 #                          enchantments: { sharpness: 5 }
 #                          custom_data:            # 嵌套 map 或 SNBT 字符串
-#                            liutrade:coupon: true
+#                            liutrade:coupon: true  # 直接写 PDC 键即可
 #                            tier: 3
+#                          # 也兼容外层包一层 PublicBukkitValues:（从 CE/其它插件抄配置时常见）
+#                          # custom_data:
+#                          #   PublicBukkitValues:
+#                          #     liutrade:coupon: true
 #   4) 全保真（任意物品）：bytes: "<Base64>"   # 主手持物品执行 /liutrade item 生成
 #   5) 规则匹配（仅输入）：material: PAPER + pdc: "jiu:jiu"（+ not_pdc: soulbound）
 #      —— 用 pdc/name/lore/custom_model_data + not 匹配任意物品；原生村民界面无法按
