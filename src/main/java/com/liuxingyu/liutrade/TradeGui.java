@@ -58,6 +58,8 @@ final class TradeGui {
     private final int[] slotToTradeIndex;
     private final int[] slotToInputIndex;
     private final MutableSignal<Integer> page;
+    /** 本商店需要的输入槽数（构造后不变，避免每次渲染重复遍历交易）。 */
+    private final int activeInputs;
     /** 输入槽：一个真实可由玩家放入/取出的虚拟库存。 */
     private final VirtualInventory inputs;
     /** 玩家背包引用（下部物品栏），自动放入时直接从这里取物。 */
@@ -84,9 +86,10 @@ final class TradeGui {
             this.slotToInputIndex[INPUT_SLOTS[i]] = i;
         }
         this.page = Signal.of(clampPage(page));
+        this.activeInputs = computeInputCount();
         this.inputs = new VirtualInventory(INPUT_SLOTS.length);
         // 超出本商店需要的输入槽直接拒绝一切放入/取出。
-        for (int i = inputCount(); i < INPUT_SLOTS.length; i++) {
+        for (int i = activeInputs; i < INPUT_SLOTS.length; i++) {
             this.inputs.setAccessRule(i, context -> false);
         }
         this.playerInv = ReferencingInventory.fromPlayerStorageContents(player.getInventory());
@@ -112,7 +115,7 @@ final class TradeGui {
         for (int slot : TRADE_SLOTS) {
             pane.setElement(slot, Element.item(tradeIcon));
         }
-        int active = inputCount();
+        int active = activeInputs;
         for (int i = 0; i < INPUT_SLOTS.length; i++) {
             pane.setElement(INPUT_SLOTS[i], i < active
                     ? Element.inventory(inputs, i)
@@ -147,14 +150,29 @@ final class TradeGui {
 
     /** 会话真正结束时把输入槽剩余物品退回玩家（或被替换/退出时清理）。 */
     private void onSessionEnd(WindowCloseReason reason) {
-        if ("void".equalsIgnoreCase(plugin.config().leftoverOnClose)
-                || reason == WindowCloseReason.DISCONNECT
-                || !player.isOnline()) {
+        try {
+            settleLeftover();
+        } finally {
+            plugin.forget(this);
+        }
+    }
+
+    /** 玩家退出/插件停用兜底：按配置退回或丢弃输入槽，避免虚拟库存随会话消失。 */
+    void releaseOnQuit() {
+        settleLeftover();
+    }
+
+    /** 插件停用兜底；离线玩家也会尽量退回/掉落到最后位置。 */
+    void releaseOnDisable() {
+        settleLeftover();
+    }
+
+    private synchronized void settleLeftover() {
+        if ("void".equalsIgnoreCase(plugin.config().leftoverOnClose)) {
             clearInputs();
         } else {
             returnInputs();
         }
-        plugin.forget(this);
     }
 
     // ---------------- 动态元素 ----------------
@@ -275,7 +293,9 @@ final class TradeGui {
         List<ItemStack> previews = previews(trade);
         boolean commands = trade.hasCommands();
         if (previews.isEmpty()) {
-            if (commands) {
+            // 纯指令交易才显示“指令产出”；convert + commands 且转换失败时应显示失败，
+            // 否则界面会提示可以交易，点击却被 TradeService 拒绝。
+            if (commands && !trade.hasItemOutput()) {
                 return commandOutputIcon(trade, batches);
             }
             return staticItem(Material.BARRIER, "&c无法完成交易",
@@ -354,7 +374,7 @@ final class TradeGui {
         lore.add(Msg.color("&7获得："));
         List<ItemStack> previews = previews(trade);
         if (previews.isEmpty()) {
-            if (trade.hasCommands()) {
+            if (trade.hasCommands() && !trade.hasItemOutput()) {
                 lore.add(Msg.color("  &8· &a执行 " + trade.commands.size() + " 条指令"));
             } else {
                 lore.add(Msg.color("  &8· &c" + (trade.convert ? "转换规则未命中" : "无法解析")));
@@ -560,7 +580,7 @@ final class TradeGui {
     }
 
     /** 把输入槽里剩下的物品退回玩家背包（放不下则原地掉落）。 */
-    void returnInputs() {
+    synchronized void returnInputs() {
         for (int i = 0; i < INPUT_SLOTS.length; i++) {
             ItemStack item = inputs.itemAt(i);
             if (item != null && !item.getType().isAir()) {
@@ -571,13 +591,23 @@ final class TradeGui {
     }
 
     /** 丢弃输入槽内全部物品（不退回）。 */
-    void clearInputs() {
+    synchronized void clearInputs() {
         for (int i = 0; i < INPUT_SLOTS.length; i++) {
             inputs.setItem(i, null);
         }
     }
 
     static void giveOrDrop(Player player, ItemStack item) {
+        if (player == null || item == null || item.getType().isAir()) {
+            return;
+        }
+        if (!player.isOnline()) {
+            // 退出/停服兜底时背包可能不再保存：直接掉在最后位置，避免输入槽物品凭空消失。
+            if (player.getWorld() != null && player.getLocation() != null) {
+                player.getWorld().dropItemNaturally(player.getLocation(), item);
+            }
+            return;
+        }
         Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
         for (ItemStack drop : leftover.values()) {
             player.getWorld().dropItemNaturally(player.getLocation(), drop);
@@ -609,6 +639,10 @@ final class TradeGui {
 
     /** 本商店一笔交易最多要几种物品（决定显示几个输入槽）。 */
     int inputCount() {
+        return activeInputs;
+    }
+
+    private int computeInputCount() {
         int max = 1;
         for (Trade trade : merchant.trades) {
             max = Math.max(max, trade.inputs.size());

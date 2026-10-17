@@ -166,7 +166,9 @@ components:
 - `convert: true`：产出由 SoulSpace 的 `convert/*.yml` 转换规则决定（**仅支持单输入**）。
 - `outputs:`：显式列出产出，**支持多条**（`material` / `material`+`components` / `library_id` / `bytes`）。
   自定义界面会依次发放全部产出；原生村民界面每笔只能给一个结果，故第一个作为配方结果、
-  其余在购买成功后补发。
+  其余在购买成功后补发。`amount` 超过单堆叠上限时会自动拆成多组发放（如 128 → 64+64）。
+- 物品规格也可用字符串简写：`material` 写法（`DIAMOND`）或物品库 id（`"ce:命名空间:id"`，
+  等价于 `library_id`）。
 - `outputs` 的条目也支持 `commands:`（指令产出）：交易成功时以**控制台身份**执行这些指令，
   可以用它发物品/货币/权限等。也可把 `commands:` 直接写在交易层级。占位符：
   `%player%`（玩家名）、`%uuid%`、`%times%`（本次交易次数，仅含 `%times%` 的指令只执行一次，

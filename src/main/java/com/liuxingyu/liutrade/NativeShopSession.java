@@ -22,6 +22,9 @@ import java.util.List;
  */
 final class NativeShopSession {
 
+    /** 同一笔不支持原生界面的交易只提示一次，避免每次打开商店都刷屏。 */
+    private static final java.util.Set<String> WARNED = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private final LiuTrade plugin;
     private final Player player;
     private final Merchant shop;
@@ -56,36 +59,37 @@ final class NativeShopSession {
 
     private MerchantRecipe build(Trade trade) {
         if (trade.inputs.size() > 2) {
-            plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name
-                    + "」有 " + trade.inputs.size() + " 个输入，原生村民界面最多 2 个，已跳过"
-                    + "（可改用 settings.gui-mode: custom）。");
+            warnOnce(trade, "inputs",
+                    "商店 " + shop.id + " 的交易「" + trade.name + "」有 " + trade.inputs.size()
+                            + " 个输入，原生村民界面最多 2 个，已跳过（可改用 settings.gui-mode: custom）。");
             return null;
         }
         if (!trade.hasItemOutput()) {
-            plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name
-                    + "」只有指令产出，原生村民界面无法表示，已跳过"
-                    + "（可改用 settings.gui-mode: custom）。");
+            warnOnce(trade, "commands",
+                    "商店 " + shop.id + " 的交易「" + trade.name
+                            + "」只有指令产出，原生村民界面无法表示，已跳过（可改用 settings.gui-mode: custom）。");
             return null;
         }
         ItemStack result = plugin.service().preview(player, trade);
         if (result == null || result.getType().isAir()) {
-            plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name
-                    + "」产出无法解析，村民界面已跳过该笔。");
+            warnOnce(trade, "output",
+                    "商店 " + shop.id + " 的交易「" + trade.name + "」产出无法解析，村民界面已跳过该笔。");
             return null;
         }
         MerchantRecipe recipe = new MerchantRecipe(result.clone(), Integer.MAX_VALUE);
         recipe.setIgnoreDiscounts(true);
         for (ItemSpec input : trade.inputs) {
             if (!input.nativeRepresentable()) {
-                plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name
-                        + "」输入含 pdc/name 等规则字段，原生村民界面无法按规则匹配，已跳过该笔"
-                        + "（可改用 settings.gui-mode: custom）。");
+                warnOnce(trade, "rules",
+                        "商店 " + shop.id + " 的交易「" + trade.name
+                                + "」输入含 pdc/name 等规则字段，原生村民界面无法按规则匹配，已跳过该笔"
+                                + "（可改用 settings.gui-mode: custom）。");
                 return null;
             }
             ItemStack sample = input.sample(plugin.soulSpace());
             if (sample == null) {
-                plugin.getLogger().warning("商店 " + shop.id + " 的交易「" + trade.name
-                        + "」输入无法解析，村民界面已跳过该笔。");
+                warnOnce(trade, "sample",
+                        "商店 " + shop.id + " 的交易「" + trade.name + "」输入无法解析，村民界面已跳过该笔。");
                 return null;
             }
             sample = sample.clone();
@@ -93,6 +97,12 @@ final class NativeShopSession {
             recipe.addIngredient(sample);
         }
         return recipe;
+    }
+
+    private void warnOnce(Trade trade, String reason, String message) {
+        if (WARNED.add(shop.id + "|" + trade.id + "|" + reason)) {
+            plugin.getLogger().warning(message);
+        }
     }
 
     org.bukkit.inventory.Merchant handle() {

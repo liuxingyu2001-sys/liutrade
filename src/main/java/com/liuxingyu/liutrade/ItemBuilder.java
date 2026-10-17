@@ -34,6 +34,8 @@ import java.util.logging.Logger;
 final class ItemBuilder {
 
     private static final Logger LOGGER = Logger.getLogger("LiuTrade");
+    private static final java.util.Set<String> WARNED_COMPONENTS =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private ItemBuilder() {
     }
@@ -91,9 +93,14 @@ final class ItemBuilder {
             case "enchantment_glint_override" -> meta.setEnchantmentGlintOverride(bool(value));
             case "damage" -> applyDamage(meta, value);
             case "dyed_color", "color" -> applyColor(meta, value);
-            case "enchantments", "stored_enchantments" -> applyEnchantments(meta, value);
+            case "enchantments" -> applyEnchantments(meta, value, false);
+            case "stored_enchantments" -> applyEnchantments(meta, value, true);
             case "custom_data", "pdc", "nbt" -> applyCustomData(meta, value);
-            default -> LOGGER.warning("未知物品组件：" + key + "（已忽略；任意组件请用 bytes:）");
+            default -> {
+                if (WARNED_COMPONENTS.add(key)) {
+                    LOGGER.warning("未知物品组件：" + key + "（已忽略；任意组件请用 bytes:）");
+                }
+            }
         }
     }
 
@@ -129,7 +136,7 @@ final class ItemBuilder {
     }
 
     @SuppressWarnings("deprecation")
-    private static void applyEnchantments(ItemMeta meta, Object value) {
+    private static void applyEnchantments(ItemMeta meta, Object value, boolean stored) {
         Map<String, Object> map = asMap(value);
         if (map == null) {
             return;
@@ -140,7 +147,11 @@ final class ItemBuilder {
                 continue;
             }
             int level = Math.max(1, intValue(entry.getValue(), 1));
-            meta.addEnchant(enchantment, level, true);
+            if (stored && meta instanceof org.bukkit.inventory.meta.EnchantmentStorageMeta storage) {
+                storage.addStoredEnchant(enchantment, level, true);
+            } else {
+                meta.addEnchant(enchantment, level, true);
+            }
         }
     }
 

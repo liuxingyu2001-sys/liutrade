@@ -21,6 +21,8 @@ final class SoulSpaceHook {
 
     private final Plugin plugin;
     private volatile Object api;
+    /** ItemConversion 实例缓存：避免每次预览/成交都反射调用 api.conversion()。 */
+    private volatile Object conversion;
     private Method mResolve;
     private Method mMatches;
     private Method mDisplayName;
@@ -67,6 +69,12 @@ final class SoulSpaceHook {
             this.mConversion = conversion;
             this.mConvert = convert;
             this.mHasRule = hasRule;
+            try {
+                this.conversion = conversion.invoke(provider);
+            } catch (Throwable ignored) {
+                // 转换器实例化失败不应让 library_id/规则匹配也一起失效；首次 convert 时再重试。
+                this.conversion = null;
+            }
             // 2.5.0 新增；旧版没有则仅影响 library_id / 规则匹配。
             this.mResolve = tryMethod(apiClass, "resolveItem", String.class);
             this.mMatches = tryMethod(apiClass, "matchesRule", Map.class, ItemStack.class);
@@ -137,10 +145,14 @@ final class SoulSpaceHook {
             return Optional.empty();
         }
         try {
-            Object conversion = mConversion.invoke(api);
-            Object result = mConvert.invoke(conversion, playerId, item);
+            Object handler = conversion();
+            if (handler == null) {
+                return Optional.empty();
+            }
+            Object result = mConvert.invoke(handler, playerId, item);
             return result instanceof Optional<?> opt ? (Optional<ItemStack>) opt : Optional.empty();
         } catch (Throwable t) {
+            conversion = null; // 句柄可能随 SoulSpace 重载失效，下次重新取
             return Optional.empty();
         }
     }
@@ -150,10 +162,25 @@ final class SoulSpaceHook {
             return false;
         }
         try {
-            Object conversion = mConversion.invoke(api);
-            return Boolean.TRUE.equals(mHasRule.invoke(conversion, item));
+            Object handler = conversion();
+            return handler != null && Boolean.TRUE.equals(mHasRule.invoke(handler, item));
         } catch (Throwable t) {
+            conversion = null;
             return false;
+        }
+    }
+
+    private Object conversion() {
+        Object cached = conversion;
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            Object created = mConversion.invoke(api);
+            conversion = created;
+            return created;
+        } catch (Throwable t) {
+            return null;
         }
     }
 

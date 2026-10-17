@@ -86,6 +86,14 @@ class ItemSpecTest {
     }
 
     @Test
+    void stringShorthandAcceptsLibraryId() {
+        ItemSpec spec = ItemSpec.parse("ce:example:ticket");
+        assertEquals("ce:example:ticket", spec.libraryId);
+        assertNull(spec.material);
+        assertEquals(1, spec.amount);
+    }
+
+    @Test
     void ruleFieldsRequireSoulSpaceRules() {
         // 除 material 外的规则字段（pdc/name/not_* 等）必须依赖 SoulSpace 匹配。
         assertTrue(ItemSpec.parse(Map.of("material", "PAPER", "pdc", "jiu:jiu")).requiresRules());

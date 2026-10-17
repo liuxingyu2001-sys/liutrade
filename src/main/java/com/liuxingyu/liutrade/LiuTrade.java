@@ -9,25 +9,28 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** LiuTrade 主类。 */
 public final class LiuTrade extends JavaPlugin {
 
     private final TradeConfig config = new TradeConfig();
-    private final Map<UUID, TradeGui> open = new HashMap<>();
-    private final Map<org.bukkit.inventory.Merchant, NativeShopSession> nativeSessions = new IdentityHashMap<>();
+    /** Folia 下不同玩家的区域线程会并发访问这些会话表。 */
+    private final Map<UUID, TradeGui> open = new ConcurrentHashMap<>();
+    private final Map<org.bukkit.inventory.Merchant, NativeShopSession> nativeSessions = new ConcurrentHashMap<>();
     /** 正在查看配方而被替换的原生商户（关闭时不应遗忘，以便返回）。 */
     private final java.util.Set<org.bukkit.inventory.Merchant> navigatingNative =
-            java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+            java.util.Collections.newSetFromMap(new ConcurrentHashMap<>());
     private MerchantManager manager;
     private SoulSpaceHook soulSpace;
     private TradeService service;
-    private long fingerprint;
+    private volatile long fingerprint;
+    private volatile Runnable reloadTimer;
+    /** 当前自动重载周期；-1 = 未启用。用于避免每次自动重载都取消/重建定时器。 */
+    private volatile long reloadPeriod = -1;
 
     @Override
     public void onEnable() {
@@ -61,18 +64,29 @@ public final class LiuTrade extends JavaPlugin {
         }
         if (config.autoReload) {
             long period = config.pollIntervalTicks;
-            Sched.runGlobalTimer(this, this::poll, period, period);
+            reloadTimer = Sched.runGlobalTimer(this, this::poll, period, period);
+            reloadPeriod = period;
         }
         getLogger().info("LiuTrade 已启用。");
     }
 
     @Override
     public void onDisable() {
+        if (reloadTimer != null) {
+            try {
+                reloadTimer.run();
+            } catch (Throwable ignored) {
+                // 停止阶段忽略取消失败，继续释放会话。
+            }
+            reloadTimer = null;
+            reloadPeriod = -1;
+        }
         for (TradeGui gui : new ArrayList<>(open.values())) {
-            if (gui.player().isOnline()) {
-                gui.returnInputs();
-            } else {
-                gui.clearInputs();
+            // 按 leftover-on-close 统一处理：离线玩家也不能直接 clear，否则虚拟输入槽物品会消失。
+            try {
+                gui.releaseOnDisable();
+            } catch (Throwable failure) {
+                getLogger().warning("停用 LiuTrade 时退回输入槽失败：" + failure);
             }
         }
         open.clear();
@@ -95,26 +109,51 @@ public final class LiuTrade extends JavaPlugin {
         return new File(root, "merchants");
     }
 
-    void reloadMerchants() {
+    synchronized void reloadMerchants() {
         merchantsRoot().mkdirs();
         manager.load(merchantsRoot());
         fingerprint = fingerprint();
     }
 
     /** 重载 config.yml + 全部商店（/liutrade reload 与自动检测用）。 */
-    void reloadAll() {
+    synchronized void reloadAll() {
         reloadConfig();
         config.load(getConfig());
+        syncReloadTimer();
         reloadMerchants();
     }
 
+    /** 让自动重载任务与最新 config 的 auto-reload/轮询间隔保持一致（/liutrade reload 后即时生效）。 */
+    private synchronized void syncReloadTimer() {
+        long desired = config.autoReload && isEnabled() ? config.pollIntervalTicks : -1;
+        if (desired == reloadPeriod && (desired < 0 || reloadTimer != null)) {
+            return; // 配置未变：不要取消/重建正在运行的定时器
+        }
+        if (reloadTimer != null) {
+            try {
+                reloadTimer.run();
+            } catch (Throwable ignored) {
+                // 已取消/已结束的任务再取消可能抛异常，不影响重新调度。
+            }
+            reloadTimer = null;
+        }
+        reloadPeriod = desired;
+        if (desired > 0) {
+            reloadTimer = Sched.runGlobalTimer(this, this::poll, desired, desired);
+        }
+    }
+
     private void poll() {
-        long current = fingerprint();
-        if (current != fingerprint) {
-            fingerprint = current;
-            reloadAll();
-            getLogger().info("检测到配置变化，已自动重载（界面模式：" + config.guiMode
-                    + "，商店 " + manager.size() + " 个）。");
+        try {
+            long current = fingerprint();
+            if (current != fingerprint) {
+                reloadAll();
+                getLogger().info("检测到配置变化，已自动重载（界面模式：" + config.guiMode
+                        + "，商店 " + manager.size() + " 个）。");
+            }
+        } catch (Throwable failure) {
+            // 周期任务抛异常会让调度器停掉后续轮询；这里吞掉并保留下一轮重试。
+            getLogger().warning("自动重载失败（下一轮继续重试）：" + failure);
         }
     }
 
@@ -168,7 +207,12 @@ public final class LiuTrade extends JavaPlugin {
     /** 实际打开（已确保在玩家所属线程执行）。 */
     private void openMerchantNow(Player player, Merchant merchant, int page) {
         if ("custom".equals(config.guiMode) && SparrowBootstrap.ready()) {
-            openCustomNow(player, merchant, page);
+            try {
+                openCustomNow(player, merchant, page);
+            } catch (Throwable t) {
+                getLogger().warning("打开自定义界面失败：" + t);
+                player.sendMessage(prefixed("no-trades"));
+            }
             return;
         }
         NativeShopSession session;
@@ -177,7 +221,12 @@ public final class LiuTrade extends JavaPlugin {
         } catch (Throwable t) {
             getLogger().warning("打开原生村民界面失败：" + t);
             if (SparrowBootstrap.ready()) {
-                openCustomNow(player, merchant, page);
+                try {
+                    openCustomNow(player, merchant, page);
+                } catch (Throwable customFailure) {
+                    getLogger().warning("回退自定义界面也失败：" + customFailure);
+                    player.sendMessage(prefixed("no-trades"));
+                }
             } else {
                 player.sendMessage(prefixed("no-trades"));
             }
@@ -188,7 +237,13 @@ public final class LiuTrade extends JavaPlugin {
             return;
         }
         nativeSessions.put(session.handle(), session);
-        player.openMerchant(session.handle(), true);
+        try {
+            player.openMerchant(session.handle(), true);
+        } catch (Throwable t) {
+            nativeSessions.remove(session.handle());
+            getLogger().warning("打开原生村民容器失败：" + t);
+            player.sendMessage(prefixed("no-trades"));
+        }
     }
 
     /** 打开 Sparrow 自定义界面（已确保在玩家所属线程执行）。 */
@@ -221,7 +276,12 @@ public final class LiuTrade extends JavaPlugin {
             player.sendMessage(prefixed("recipe-none"));
             return;
         }
-        gui.navigateTo(RecipeGui.child(this, player, trade));
+        try {
+            gui.navigateTo(RecipeGui.child(this, player, trade));
+        } catch (Throwable failure) {
+            getLogger().warning("打开交易配方失败：" + failure);
+            player.sendMessage(prefixed("recipe-none"));
+        }
     }
 
     /** 原生村民界面：右键产出格 → 查看配方，关闭后重新打开村民界面。 */
@@ -232,26 +292,46 @@ public final class LiuTrade extends JavaPlugin {
         }
         // 打开配方窗会先关掉村民容器，这里标记会话不要被遗忘，返回时才能重开。
         navigatingNative.add(session.handle());
-        RecipeGui.openRoot(this, player, trade, () -> {
-            navigatingNative.remove(session.handle());
-            // 会话结束当刻直接开原生容器可能与会话收尾相冲，放到下一 tick 的玩家线程。
-            Sched.runForPlayer(this, player, () -> {
-                if (player.isOnline()) {
-                    nativeSessions.put(session.handle(), session);
-                    player.openMerchant(session.handle(), true);
-                }
+        try {
+            RecipeGui.openRoot(this, player, trade, () -> {
+                navigatingNative.remove(session.handle());
+                // 会话结束当刻直接开原生容器可能与会话收尾相冲，放到下一 tick 的玩家线程。
+                Sched.runForPlayer(this, player, () -> {
+                    if (player.isOnline()) {
+                        nativeSessions.put(session.handle(), session);
+                        try {
+                            player.openMerchant(session.handle(), true);
+                        } catch (Throwable t) {
+                            nativeSessions.remove(session.handle());
+                            getLogger().warning("返回原生村民容器失败：" + t);
+                        }
+                    }
+                });
             });
-        });
+        } catch (Throwable failure) {
+            navigatingNative.remove(session.handle());
+            getLogger().warning("打开交易配方失败：" + failure);
+            player.sendMessage(prefixed("recipe-none"));
+        }
     }
 
     void forget(TradeGui gui) {
         open.remove(gui.player().getUniqueId(), gui);
     }
 
-    /** 玩家退出时清理所有会话引用。 */
+    /** 玩家退出时清理所有会话引用，并先把自定义界面的输入槽退回。 */
     void forgetPlayer(Player player) {
-        open.remove(player.getUniqueId());
-        nativeSessions.values().removeIf(session -> session.player().equals(player));
+        TradeGui gui = open.remove(player.getUniqueId());
+        if (gui != null) {
+            gui.releaseOnQuit();
+        }
+        nativeSessions.entrySet().removeIf(entry -> {
+            if (!entry.getValue().player().equals(player)) {
+                return false;
+            }
+            navigatingNative.remove(entry.getKey());
+            return true;
+        });
     }
 
     // ---------------- 访问器 ----------------

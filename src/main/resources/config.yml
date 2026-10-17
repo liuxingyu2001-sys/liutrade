@@ -20,7 +20,7 @@ settings:
   poll-interval-ticks: 200
   # 关掉界面后，槽位里没取走的输入物品如何处理：return = 退回背包（放不下掉落），void = 丢弃。
   leftover-on-close: return
-  # 完成一次交易是否发送 ActionBar 提示。
+  # 完成一次交易是否发送聊天提示。
   feedback: true
   # 单个界面最多显示的页数保护（每个商店交易很多时用）。
   max-pages: 20

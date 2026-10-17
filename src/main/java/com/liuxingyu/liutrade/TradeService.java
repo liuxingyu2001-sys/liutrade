@@ -53,14 +53,17 @@ final class TradeService {
         }
         List<ItemStack> outputs = new ArrayList<>();
         if (trade.hasItemOutput()) {
+            // 输入扣除在下面统一进行；同一份输入重复 times 次的结果是确定的，
+            // 只构建一次再按次数复制，避免 shift 交易时反复跑转换规则/解析物品库。
+            List<ItemStack> produced = produceAll(player, trade, gui.inputAt(0));
+            if (produced.isEmpty()) {
+                player.sendMessage(plugin.prefixed(trade.convert ? "soulspace-missing" : "trade-fail"));
+                return false;
+            }
             for (int i = 0; i < times; i++) {
-                ItemStack subject = gui.inputAt(0);
-                List<ItemStack> produced = produceAll(player, trade, subject);
-                if (produced.isEmpty()) {
-                    player.sendMessage(plugin.prefixed(trade.convert ? "soulspace-missing" : "trade-fail"));
-                    return false;
+                for (ItemStack item : produced) {
+                    outputs.add(item.clone());
                 }
-                outputs.addAll(produced);
             }
         }
         for (int i = 0; i < trade.inputs.size(); i++) {
@@ -142,9 +145,9 @@ final class TradeService {
                 if (sample == null || sample.getType().isAir()) {
                     continue;
                 }
-                ItemStack output = sample.clone();
-                output.setAmount(Math.min(spec.amount, output.getMaxStackSize()));
-                results.add(output);
+                // 配置 amount 可能大于单堆叠上限（例如 128 个），按最大堆叠拆成多组，
+                // 否则原生界面/自定义界面都只会发第一组，玩家少拿产出。
+                addSplit(results, sample, spec.amount);
             }
             return results;
         }
@@ -160,8 +163,31 @@ final class TradeService {
         convertedInput.setAmount(Math.min(trade.inputs.get(0).amount, convertedInput.getMaxStackSize()));
         ItemStack converted = plugin.soulSpace().convert(player.getUniqueId(), convertedInput).orElse(null);
         if (converted != null && !converted.getType().isAir()) {
-            results.add(converted);
+            addSplit(results, converted, converted.getAmount());
         }
         return results;
+    }
+
+    /** 按物品最大堆叠拆成多组；sample 本身不会被修改。 */
+    static void addSplit(List<ItemStack> results, ItemStack sample, int amount) {
+        int max = Math.max(1, sample.getMaxStackSize());
+        for (int take : splitAmounts(amount, max)) {
+            ItemStack stack = sample.clone();
+            stack.setAmount(take);
+            results.add(stack);
+        }
+    }
+
+    /** 纯数量拆分（便于单测，不依赖 Bukkit ItemStack 注册表）。 */
+    static List<Integer> splitAmounts(int amount, int maxStackSize) {
+        List<Integer> out = new ArrayList<>();
+        int remaining = amount;
+        int max = Math.max(1, maxStackSize);
+        while (remaining > 0) {
+            int take = Math.min(remaining, max);
+            out.add(take);
+            remaining -= take;
+        }
+        return out;
     }
 }

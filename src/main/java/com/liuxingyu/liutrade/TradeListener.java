@@ -22,6 +22,9 @@ final class TradeListener implements Listener {
 
     @EventHandler
     public void onClick(InventoryClickEvent event) {
+        if (event.isCancelled()) {
+            return;
+        }
         if (event.getInventory() instanceof MerchantInventory merchantInventory) {
             handleNativeRecipeClick(event, merchantInventory);
         }
@@ -71,7 +74,7 @@ final class TradeListener implements Listener {
         event.setResult(session.prepareResult(inventory));
     }
 
-    @EventHandler(ignoreCancelled = true)
+    @EventHandler(priority = org.bukkit.event.EventPriority.HIGHEST, ignoreCancelled = true)
     public void onPurchase(PlayerPurchaseEvent event) {
         NativeShopSession session = plugin.nativeSession(event.getMerchant());
         if (session == null) {

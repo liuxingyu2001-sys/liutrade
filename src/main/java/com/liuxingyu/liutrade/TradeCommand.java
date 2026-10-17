@@ -99,7 +99,13 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
             player.sendMessage(Msg.color("&c主手没有物品。"));
             return true;
         }
-        String base64 = Base64.getEncoder().encodeToString(hand.serializeAsBytes());
+        String base64;
+        try {
+            base64 = Base64.getEncoder().encodeToString(hand.serializeAsBytes());
+        } catch (Throwable failure) {
+            player.sendMessage(Msg.color("&c该物品无法序列化：" + failure.getMessage()));
+            return true;
+        }
         player.sendMessage(Msg.color("&a把下面这行贴到交易的 outputs 里作为产出（同样已输出到控制台）："));
         player.sendMessage(Msg.color("&f- bytes: \"" + base64 + "\""));
         plugin.getLogger().info("[" + player.getName() + "] 主手物品导出：- bytes: \"" + base64 + "\"");
@@ -147,18 +153,31 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
             }
             count = Math.min(count, 2304);
         }
-        List<ItemStack> outputs = plugin.service().produceAll(target, trade, null);
-        if (outputs.isEmpty()) {
-            sender.sendMessage(plugin.prefixed("trade-fail"));
-            return true;
-        }
-        for (ItemStack output : outputs) {
-            giveStacked(target, output, output.getAmount() * count);
-        }
-        sender.sendMessage(Msg.color("&a已给 &f" + target.getName() + " &a发放 &f" + merchant.id + " / "
-                + (trade.key == null || trade.key.isBlank() ? trade.name : trade.key)
-                + " &a的产出 x" + count + "。"));
+        // 目标玩家可能在另一个 Folia 区域：产出发放必须回到其所属线程。
+        int finalCount = count;
+        Sched.runForPlayer(plugin, target, () -> {
+            List<ItemStack> outputs = plugin.service().produceAll(target, trade, null);
+            if (outputs.isEmpty()) {
+                reply(sender, plugin.prefixed("trade-fail"));
+                return;
+            }
+            for (ItemStack output : outputs) {
+                giveStacked(target, output, output.getAmount() * finalCount);
+            }
+            reply(sender, Msg.color("&a已给 &f" + target.getName() + " &a发放 &f" + merchant.id + " / "
+                    + (trade.key == null || trade.key.isBlank() ? trade.name : trade.key)
+                    + " &a的产出 x" + finalCount + "。"));
+        }, () -> reply(sender, Msg.color("&c玩家已离线：&f" + target.getName())));
         return true;
+    }
+
+    /** 跨 Folia 区域回复命令发送者。 */
+    private void reply(CommandSender sender, String message) {
+        if (sender instanceof Player player) {
+            Sched.runForPlayer(plugin, player, () -> sender.sendMessage(message));
+        } else {
+            sender.sendMessage(message);
+        }
     }
 
     /** 按最大堆叠数拆成多组后发给玩家（放不下则原地掉落）。 */

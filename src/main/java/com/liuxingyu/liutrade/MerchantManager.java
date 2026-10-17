@@ -15,7 +15,8 @@ import java.util.Map;
 final class MerchantManager {
 
     private final Plugin plugin;
-    private Map<String, Merchant> merchants = Collections.emptyMap();
+    /** 自动重载在全局线程整体替换，其他线程读；volatile + 不可变 Map 保证安全发布。 */
+    private volatile Map<String, Merchant> merchants = Collections.emptyMap();
 
     MerchantManager(Plugin plugin) {
         this.plugin = plugin;
@@ -35,7 +36,7 @@ final class MerchantManager {
             if (merchant.npc == null || merchant.npc.isBlank()) {
                 continue;
             }
-            if (merchant.npc.equals(id) || merchant.npc.equalsIgnoreCase(name)) {
+            if (merchant.npc.equals(id) || (name != null && merchant.npc.equalsIgnoreCase(name))) {
                 return merchant;
             }
         }
@@ -66,8 +67,10 @@ final class MerchantManager {
                 warn("解析商店 " + id + " 失败：" + e);
             }
         }
-        this.merchants = parsed;
-        plugin.getLogger().info("已加载 " + parsed.size() + " 个交易商店。");
+        this.merchants = Collections.unmodifiableMap(parsed);
+        if (plugin != null) {
+            plugin.getLogger().info("已加载 " + parsed.size() + " 个交易商店。");
+        }
     }
 
     Merchant parse(YamlConfiguration cfg, String id) {

@@ -33,6 +33,8 @@ final class ItemSpec {
     final ItemSpec display;
     /** 仅用于界面显示的名字（可为 null）。 */
     final String displayName;
+    /** 样品解析缓存（bytes 反序列化/CE 解析在渲染热路径上只做一次）。 */
+    private volatile ItemStack sampleCache;
 
     private ItemSpec(String libraryId, String bytes, String material,
                      Map<String, Object> components, Map<String, Object> rule, int amount,
@@ -50,6 +52,14 @@ final class ItemSpec {
     static ItemSpec parse(Object raw) {
         if (raw instanceof String s && !s.isBlank()) {
             String value = s.trim();
+            int colon = value.indexOf(':');
+            if (colon > 0) {
+                String namespace = value.substring(0, colon).toLowerCase(java.util.Locale.ROOT);
+                if (!namespace.equals("minecraft") && !namespace.equals("mc") && !namespace.equals("vanilla")) {
+                    // 字符串简写也接受物品库 id（ce:/mm:/ie:...），与 library_id 等价。
+                    return new ItemSpec(value, null, null, Map.of(), Map.of(), 1, null, null);
+                }
+            }
             String mat = Materials.canonical(value);
             if (mat == null) {
                 mat = value;
@@ -65,6 +75,12 @@ final class ItemSpec {
         Object amountRaw = map.get("amount");
         if (amountRaw instanceof Number n) {
             amount = n.intValue();
+        } else if (amountRaw instanceof String text) {
+            try {
+                amount = Integer.parseInt(text.trim());
+            } catch (NumberFormatException ignored) {
+                // 保持默认 1；非法数量不应让整条交易解析失败。
+            }
         }
         String libraryId = blankToNull(map.get("library_id"));
         String bytes = blankToNull(map.get("bytes"));
@@ -107,8 +123,21 @@ final class ItemSpec {
         return new ItemSpec(libraryId, bytes, material, components, rule, amount, display, displayName);
     }
 
-    /** 生成匹配/构建用样品（数量 1）；无法解析时返回 null。 */
+    /** 生成匹配/构建用样品（数量 1）；无法解析时返回 null。返回副本，调用方可安全修改数量。 */
     ItemStack sample(SoulSpaceHook ss) {
+        ItemStack cached = sampleCache;
+        if (cached != null) {
+            return cached.clone();
+        }
+        ItemStack built = buildSample(ss);
+        if (built != null && !built.getType().isAir()) {
+            sampleCache = built.clone();
+            return built;
+        }
+        return built;
+    }
+
+    private ItemStack buildSample(SoulSpaceHook ss) {
         if (bytes != null) {
             ItemStack fromBytes = ItemBuilder.fromBytes(bytes);
             if (fromBytes != null) {
@@ -116,7 +145,7 @@ final class ItemSpec {
             }
         }
         if (libraryId != null) {
-            ItemStack resolved = ss.resolveItem(libraryId).orElse(null);
+            ItemStack resolved = ss == null ? null : ss.resolveItem(libraryId).orElse(null);
             if (resolved != null) {
                 return resolved;
             }
