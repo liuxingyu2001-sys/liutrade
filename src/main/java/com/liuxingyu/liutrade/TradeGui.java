@@ -336,8 +336,13 @@ final class TradeGui {
             lore.add(Msg.color("  &8· &f" + specName(input) + " &7x" + input.amount));
         }
         lore.add(Msg.color("&7获得："));
-        for (String command : trade.commands) {
-            lore.add(Msg.color("  &8· &f" + command));
+        if (trade.commandDisplayName != null) {
+            // 配置了显示名就以它为准，不再把原生指令摆给玩家看。
+            lore.add(Msg.color("  &8· &f" + trade.commandDisplayName));
+        } else {
+            for (String command : trade.commands) {
+                lore.add(Msg.color("  &8· &f" + command));
+            }
         }
         lore.add("");
         lore.add(Msg.color("&a左键 &7：交易 1 次"));
@@ -386,10 +391,14 @@ final class TradeGui {
                         + (trade.convert ? " &8(转换)" : "")));
             }
         }
-        // 直接列出原生指令，而不是只写「执行 N 条指令」，方便玩家看到实际产出。
+        // 纯指令产出配了 display_name 时只显示名字，否则列出原生指令。
         if (trade.hasCommands()) {
-            for (String command : trade.commands) {
-                lore.add(Msg.color("  &8· &a" + command));
+            if (trade.commandDisplayName != null) {
+                lore.add(Msg.color("  &8· &f" + trade.commandDisplayName));
+            } else {
+                for (String command : trade.commands) {
+                    lore.add(Msg.color("  &8· &a" + command));
+                }
             }
         }
         int batches = batches(trade);

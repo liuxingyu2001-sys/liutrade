@@ -150,9 +150,13 @@ final class RecipeGui {
 
     private ItemStack commandIcon(Trade trade) {
         List<String> lore = new ArrayList<>();
-        lore.add(Msg.color("&7交易成功后以控制台执行："));
-        for (String command : trade.commands) {
-            lore.add(Msg.color("  &8· &f" + command));
+        if (trade.commandDisplayName != null) {
+            lore.add(Msg.color("&7交易成功后发放 &f" + trade.commandDisplayName));
+        } else {
+            lore.add(Msg.color("&7交易成功后以控制台执行："));
+            for (String command : trade.commands) {
+                lore.add(Msg.color("  &8· &f" + command));
+            }
         }
         return staticItem(Material.COMMAND_BLOCK, trade.commandName(), lore);
     }
