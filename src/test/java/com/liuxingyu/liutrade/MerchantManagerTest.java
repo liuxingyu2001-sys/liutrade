@@ -219,6 +219,13 @@ class MerchantManagerTest {
                       - commands:
                           - "give %player% netherite_ingot 1"
                           - "eco give %player% 100 %times%"
+                  带名字的指令:
+                    inputs:
+                      - material: PAPER
+                    outputs:
+                      - commands:
+                          - "qiandao card give %player% %times%"
+                        display_name: "&6补签卡"
                   物品加指令:
                     inputs:
                       - material: IRON_INGOT
@@ -234,6 +241,15 @@ class MerchantManagerTest {
         assertTrue(commandOnly.hasCommands());
         assertEquals(2, commandOnly.commands.size());
         assertFalse(commandOnly.convert);
+        // 没配 display_name 时，图标名字直接显示第一条原生指令。
+        assertEquals("give %player% netherite_ingot 1", commandOnly.commandName());
+
+        Trade namedCommand = merchant.findTrade("带名字的指令");
+        assertNotNull(namedCommand);
+        assertFalse(namedCommand.hasItemOutput());
+        assertEquals("&6补签卡", namedCommand.commandDisplayName);
+        assertEquals("&6补签卡", namedCommand.commandName());
+        assertEquals(1, namedCommand.commands.size());
 
         Trade mixed = merchant.findTrade("物品加指令");
         assertNotNull(mixed);
@@ -242,5 +258,8 @@ class MerchantManagerTest {
         assertEquals("GOLD_INGOT", mixed.outputs.get(0).rule.get("material"));
         assertTrue(mixed.hasCommands());
         assertEquals(1, mixed.commands.size());
+        // 物品+指令条目的 display_name 仍属于物品，不影响指令图标名字。
+        assertNull(mixed.commandDisplayName);
+        assertEquals("say hi %player%", mixed.commandName());
     }
 }

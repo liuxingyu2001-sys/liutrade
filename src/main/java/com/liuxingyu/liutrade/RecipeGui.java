@@ -154,7 +154,7 @@ final class RecipeGui {
         for (String command : trade.commands) {
             lore.add(Msg.color("  &8· &f" + command));
         }
-        return staticItem(Material.COMMAND_BLOCK, "&a指令产出", lore);
+        return staticItem(Material.COMMAND_BLOCK, trade.commandName(), lore);
     }
 
     private ItemStack border() {

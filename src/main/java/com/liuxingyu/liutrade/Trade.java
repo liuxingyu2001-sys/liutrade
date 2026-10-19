@@ -24,6 +24,8 @@ final class Trade {
     List<ItemSpec> outputs;
     /** 产出时以控制台身份执行的指令（{@code %player%}/{@code %uuid%}/{@code %times%} 可替换）；可为空。 */
     List<String> commands = java.util.Collections.emptyList();
+    /** 纯指令产出图标的名字（取指令条目上的 {@code display_name}/{@code label}）；为空时显示原生指令。 */
+    String commandDisplayName;
     boolean convert;
     String permission = "";
 
@@ -39,5 +41,22 @@ final class Trade {
     /** 是否配置了指令产出。 */
     boolean hasCommands() {
         return commands != null && !commands.isEmpty();
+    }
+
+    /**
+     * 指令产出图标显示的名字：条目上配置了 {@code display_name}/{@code label} 就用它，
+     * 否则直接显示第一条原生指令（让玩家看到实际会执行什么）。
+     */
+    String commandName() {
+        if (commandDisplayName != null && !commandDisplayName.isBlank()) {
+            return commandDisplayName;
+        }
+        if (hasCommands()) {
+            String first = commands.get(0);
+            if (first != null && !first.isBlank()) {
+                return first.trim();
+            }
+        }
+        return "指令产出";
     }
 }

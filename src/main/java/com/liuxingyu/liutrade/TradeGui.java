@@ -314,7 +314,10 @@ final class TradeGui {
                 lore.add(Msg.color("&7额外产出 &f" + plugin.itemName(extra) + " &7x" + extra.getAmount()));
             }
             if (commands) {
-                lore.add(Msg.color("&7并执行 &f" + trade.commands.size() + " &7条指令"));
+                lore.add(Msg.color("&7并执行指令："));
+                for (String command : trade.commands) {
+                    lore.add(Msg.color("  &8· &a" + command));
+                }
             }
             lore.add("");
             lore.add(Msg.color("&a左键 &7：交易 1 次"));
@@ -325,7 +328,7 @@ final class TradeGui {
         return result;
     }
 
-    /** 纯指令产出（无物品）时的产出格。 */
+    /** 纯指令产出（无物品）时的产出格；名字优先用条目上的 display_name，否则显示原生指令。 */
     private ItemStack commandOutputIcon(Trade trade, int batches) {
         List<String> lore = new ArrayList<>();
         lore.add(Msg.color("&7需要："));
@@ -339,7 +342,7 @@ final class TradeGui {
         lore.add("");
         lore.add(Msg.color("&a左键 &7：交易 1 次"));
         lore.add(Msg.color("&aShift+左键 &7：全部 &f" + batches + " &7次"));
-        return staticItem(Material.COMMAND_BLOCK, "&a指令产出", lore);
+        return staticItem(Material.COMMAND_BLOCK, trade.commandName(), lore);
     }
 
     /** 交易列表某槽位当前应显示的图标。 */
@@ -374,9 +377,7 @@ final class TradeGui {
         lore.add(Msg.color("&7获得："));
         List<ItemStack> previews = previews(trade);
         if (previews.isEmpty()) {
-            if (trade.hasCommands() && !trade.hasItemOutput()) {
-                lore.add(Msg.color("  &8· &a执行 " + trade.commands.size() + " 条指令"));
-            } else {
+            if (!trade.hasCommands()) {
                 lore.add(Msg.color("  &8· &c" + (trade.convert ? "转换规则未命中" : "无法解析")));
             }
         } else {
@@ -384,8 +385,11 @@ final class TradeGui {
                 lore.add(Msg.color("  &8· &f" + plugin.itemName(pv) + " &7x" + pv.getAmount()
                         + (trade.convert ? " &8(转换)" : "")));
             }
-            if (trade.hasCommands()) {
-                lore.add(Msg.color("  &8· &a执行 " + trade.commands.size() + " 条指令"));
+        }
+        // 直接列出原生指令，而不是只写「执行 N 条指令」，方便玩家看到实际产出。
+        if (trade.hasCommands()) {
+            for (String command : trade.commands) {
+                lore.add(Msg.color("  &8· &a" + command));
             }
         }
         int batches = batches(trade);

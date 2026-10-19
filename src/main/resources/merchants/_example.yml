@@ -118,9 +118,11 @@ trades:
         amount: 1
     outputs:
       # 以控制台身份执行；%times% 只执行一次并填入交易次数，%player% 为玩家名
+      # display_name 可选：图标名字用它；不写则直接显示第一条原生指令
       - commands:
           - "give %player% minecraft:emerald %times%"
           - "eco give %player% 100"
+        display_name: "&a绿宝石礼包"
   物品加指令:
     name: "&f铁锭 &7→ &6金锭 &7+ 提示"
     inputs:

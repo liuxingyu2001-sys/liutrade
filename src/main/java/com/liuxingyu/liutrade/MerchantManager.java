@@ -109,6 +109,7 @@ final class MerchantManager {
         List<ItemSpec> inputs = new ArrayList<>();
         List<ItemSpec> outputs = new ArrayList<>();
         List<String> commands = new ArrayList<>();
+        String commandDisplayName = null;
         for (Object raw : list(section.get("inputs"), section.get("input"))) {
             ItemSpec spec = spec(raw);
             if (spec != null) {
@@ -127,6 +128,19 @@ final class MerchantManager {
                 ItemSpec spec = spec(itemMap);
                 if (spec != null) {
                     outputs.add(spec);
+                } else {
+                    // 纯指令产出没有物品可命名：条目上的 display_name/label 只用于指令产出图标。
+                    String name = blankToNull(itemMap.get("display_name"));
+                    if (name == null) {
+                        name = blankToNull(itemMap.get("label"));
+                    }
+                    if (name != null) {
+                        if (commandDisplayName == null) {
+                            commandDisplayName = name;
+                        } else if (!commandDisplayName.equals(name)) {
+                            warn("交易 " + id + " 有多个指令产出名，只用第一个：" + commandDisplayName);
+                        }
+                    }
                 }
             } else {
                 ItemSpec spec = spec(raw);
@@ -164,6 +178,7 @@ final class MerchantManager {
         trade.inputs = Collections.unmodifiableList(inputs);
         trade.outputs = outputs.isEmpty() ? null : Collections.unmodifiableList(outputs);
         trade.commands = Collections.unmodifiableList(commands);
+        trade.commandDisplayName = commandDisplayName;
         trade.convert = convert;
         trade.description = stringList(section.get("description"));
         trade.display = spec(section.get("display"));
@@ -200,6 +215,14 @@ final class MerchantManager {
 
     private static String orEmpty(String value) {
         return value == null ? "" : value;
+    }
+
+    private static String blankToNull(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 
     /** 把字符串或字符串列表归一为不可变列表（用于 description 等）。 */

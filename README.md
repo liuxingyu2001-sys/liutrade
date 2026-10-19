@@ -173,6 +173,8 @@ components:
   可以用它发物品/货币/权限等。也可把 `commands:` 直接写在交易层级。占位符：
   `%player%`（玩家名）、`%uuid%`、`%times%`（本次交易次数，仅含 `%times%` 的指令只执行一次，
   其余按次数逐遍执行）。纯指令产出（无物品）**只在自定义界面可用**，原生村民界面会跳过并提示。
+- 纯指令产出的图标名字：条目上写了 `display_name`（别名 `label`）就用它，**没写则直接显示
+  第一条原生指令**（如 `qiandao card give %player% %times%`），lore 里始终列出全部实际执行的指令。
 
 ```yaml
 trades:
@@ -184,6 +186,14 @@ trades:
       - commands:
           - "give %player% emerald %times%"
           - "eco give %player% 100"
+  补签卡:
+    inputs:
+      - material: EMERALD
+        amount: 8
+    outputs:
+      - commands:
+          - "qiandao card give %player% %times%"
+        display_name: "&6补签卡"   # 可选；不写则图标名显示上面的原生指令
   # 也可物品与指令共存：
   混合:
     inputs:
@@ -214,6 +224,8 @@ trades:
 
 自定义界面里：左键交易图标自动放入所需物品，也可手动把物品放进输入槽；左键产出槽成交 1 次，
 Shift+左键成交全部；关界面时输入槽里没取走的物品会退回背包（`settings.leftover-on-close: void` 可改为丢弃）。
+纯指令产出的产出格是命令块：名字取条目上的 `display_name`，没配则显示第一条原生指令，
+lore 里列出全部指令；交易列表的「获得」也会逐条列出实际执行的指令。
 
 ### 查看交易配方
 
