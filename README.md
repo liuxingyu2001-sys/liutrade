@@ -7,13 +7,15 @@
 - 支持绑定 **Citizens** NPC：右键 NPC 直接打开对应商店；
 - 未安装 SoulSpace 时自动退化为「仅原版材质」交易，不报错。
 
-> 依赖：[SoulSpace](https://github.com/liuxingyu2001-sys/soulspace) **2.5.0+**（软依赖，用于规则匹配、物品库解析、转换产出）。
+> 依赖：[SoulSpace](https://github.com/liuxingyu2001-sys/soulspace) **2.5.0+**（软依赖，用于规则匹配、物品库解析、转换产出）；
+> **LiuLib 1.0.5+**（硬依赖，物品规格解析，`plugin.yml depend: [LiuLib]`）；可选 **liuitemlib**（软依赖，`lib:<物品库ID>` 物品库引用）。
 
 ## 环境
 
 - Paper 1.21+（Folia 兼容）
 - Java 21
-- 可选：SoulSpace 2.5.0+、Citizens
+- 必需：LiuLib 1.0.5+
+- 可选：SoulSpace 2.5.0+、Citizens、liuitemlib
 
 ## 安装
 
@@ -97,14 +99,35 @@ trades:
 
 | 写法 | 例子 | 匹配/生成方式 |
 | --- | --- | --- |
-| 原版材质 | `material: DIAMOND`（= `diamond` = `minecraft:diamond`） | 按材质生成/匹配 |
-| 物品库（CE/MM/IE/原版） | `library_id: "ce:ns:id"` | 经 SoulSpace `resolveItem` 生成，按 `isSimilar` 匹配 |
+| 原版材质 | `material: DIAMOND`（= `diamond` = `minecraft:diamond`） | 经 LiuLib 解析为原版物品，按材质生成/匹配 |
+| 物品库（CE/MM/IE/原版） | `library_id: "ce:ns:id"` | 先经 LiuLib（CE 物品）解析，失败再经 SoulSpace `resolveItem`，按 `isSimilar` 匹配 |
+| LiuLib 完整物品规格 | `library_id: "base64:..."` / `"nbt:..."` / `"lib:gift:spring_2026"` | 由 LiuLib `ItemCodec` 反序列化/物品库解析，按 `isSimilar` 精确匹配 |
 | 材质 + 组件 | `material: PAPER` + `components: {...}` | 用组件构建自定义物品，按 `isSimilar` 匹配 |
-| 全保真 | `bytes: "<Base64>"` | `ItemStack.serializeAsBytes()`，任意物品/组件原样还原 |
+| 全保真 | `bytes: "<Base64>"` | 先经 LiuLib 反序列化（兼容 Paper 二进制与旧对象流），失败回退 `ItemStack.serializeAsBytes()` |
 | 规则字段 | `material: PAPER` + `pdc: jiu:jiu` | 经 SoulSpace `matchesRule` 匹配（支持 `not_pdc` 等否定） |
 | 显示物品（仅界面） | `display: { library_id: "ce:ns:id" }` | 图标显示该物品，匹配仍按规则字段 |
 | 显示名字（仅界面） | `display_name: "&6神秘票券"`（别名 `label`） | 界面/lore 显示的名字，不再显示 pdc/英文名 |
 | 数量 | `amount: 8` | 一笔所需/产出数量，默认 1 |
+
+**LiuLib 物品规格**（`inputs` / `outputs` / `icon` / `display` 里的 `material`、`library_id` 以及字符串
+简写都可用）：`base64:...` / `nbt:...` / `bytes:...` / `item:base64:...` 完整物品（数据组件、PDC、CE
+物品全保真）、`ce:ns:id` / `craftengine:ns:id` CE 物品、`lib:<物品库ID>` 物品库引用（需安装
+**liuitemlib**，且 `plugin.yml` 已把 liuitemlib 加入 `softdepend`）、以及 `DIAMOND` / `minecraft:diamond` /
+`DIAMOND:3` / `DIAMOND*3` 常规写法。解析顺序是 **LiuLib 优先、原逻辑兜底**：LiuLib 解析失败（或旧版
+SoulSpace 未装）时自动回退到原来的材质 / SoulSpace `resolveItem` 逻辑，老配置行为不变。
+
+```yaml
+trades:
+  编码物品:
+    name: "&6神秘礼物"
+    inputs:
+      - material: EMERALD
+        amount: 8
+    outputs:
+      - library_id: "base64:H4sI..."          # /liulib item main 复制的完整物品
+      # - library_id: "lib:gift:spring_2026"  # 物品库引用（liuitemlib）
+      # - "base64:H4sI..."                    # 字符串简写等价
+```
 
 `display` / `display_name` 在**物品规格**（输入/产出）与**交易本身**上都能用：
 交易上的 `display` 只改列表图标物品，`display_name` 只改列表图标名字（`name` 仍用于聊天提示）。

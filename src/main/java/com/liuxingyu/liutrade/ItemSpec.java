@@ -11,8 +11,11 @@ import java.util.Map;
  *
  * <p>写法：
  * <ul>
- *   <li>{@code library_id: "ce:ns:id"} —— 经 SoulSpace {@code resolveItem} 生成（CE/MM/IE/原版材质）；</li>
- *   <li>{@code material: PAPER} + {@code components: {...}} —— 用组件构建自定义物品（见 {@link ItemBuilder}）；</li>
+ *   <li>{@code library_id: "ce:ns:id"} —— 先经 LiuLib 完整物品规格解析（{@code base64:}/{@code nbt:}/
+ *       {@code bytes:}/{@code item:}/{@code lib:}/{@code ce:}），失败再走 SoulSpace {@code resolveItem}
+ *       （CE/MM/IE/原版材质）；</li>
+ *   <li>{@code material: PAPER} + {@code components: {...}} —— 用组件构建自定义物品（见 {@link ItemBuilder}）；
+ *       该键同样接受 LiuLib 完整物品规格；</li>
  *   <li>{@code bytes: "<base64>"} —— {@code ItemStack.serializeAsBytes()} 的全保真通道（任意物品）；</li>
  *   <li>规则字段（{@code pdc}/{@code name}/{@code lore}/{@code custom_model_data} 及 {@code not_*}）
  *       —— 经 SoulSpace {@code matchesRule} 匹配；</li>
@@ -139,12 +142,22 @@ final class ItemSpec {
 
     private ItemStack buildSample(SoulSpaceHook ss) {
         if (bytes != null) {
+            // 完整物品优先交给 LiuLib（Paper 二进制 + 旧版对象流都能解），失败再走本地 serializeAsBytes
+            ItemStack viaLib = LiuLibItems.buildOrNull("base64:" + bytes);
+            if (viaLib != null) {
+                return viaLib;
+            }
             ItemStack fromBytes = ItemBuilder.fromBytes(bytes);
             if (fromBytes != null) {
                 return fromBytes;
             }
         }
         if (libraryId != null) {
+            // LiuLib 完整规格（base64:/nbt:/lib:/ce:…）优先，SoulSpace 物品库解析作为兜底
+            ItemStack viaLib = LiuLibItems.buildOrNull(libraryId);
+            if (viaLib != null) {
+                return viaLib;
+            }
             ItemStack resolved = ss == null ? null : ss.resolveItem(libraryId).orElse(null);
             if (resolved != null) {
                 return resolved;
@@ -154,6 +167,7 @@ final class ItemSpec {
             return type == null ? null : new ItemStack(type);
         }
         if (material != null) {
+            // ItemBuilder 内部同样先试 LiuLib，材质/组件逻辑保持原样
             return ItemBuilder.build(material, components);
         }
         return null;
@@ -169,7 +183,8 @@ final class ItemSpec {
         if (item == null || item.getType().isAir()) {
             return false;
         }
-        boolean exact = libraryId != null || bytes != null || (material != null && !components.isEmpty());
+        boolean exact = libraryId != null || bytes != null
+                || (material != null && (!components.isEmpty() || isEncodedSpec(material)));
         if (exact) {
             ItemStack sample = sample(ss);
             return sample != null && item.isSimilar(sample);
@@ -201,14 +216,28 @@ final class ItemSpec {
 
     /**
      * 能否用原生村民界面表示：需要能唯一采样（{@code library_id}/{@code bytes}/
-     * {@code material + components}），或规则只有 {@code material}。
+     * {@code material + components}/{@code material} 写成 LiuLib 完整规格），或规则只有 {@code material}。
      * 只有 {@code pdc}/{@code name} 等无法采样的字段时，原生界面无法按规则匹配（需自定义界面）。
      */
     boolean nativeRepresentable() {
-        if (libraryId != null || bytes != null || !components.isEmpty()) {
+        if (libraryId != null || bytes != null || !components.isEmpty()
+                || (material != null && isEncodedSpec(material))) {
             return true;
         }
         return rule.size() == 1 && rule.containsKey("material");
+    }
+
+    /**
+     * {@code material} 是否 LiuLib 完整物品规格（{@code base64:}/{@code nbt:}/{@code bytes:}/
+     * {@code item:}/{@code lib:}）。这类写法没有原版材质可匹配，只能按样例 {@code isSimilar} 精确匹配。
+     */
+    static boolean isEncodedSpec(String raw) {
+        if (raw == null) {
+            return false;
+        }
+        String text = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        return text.startsWith("base64:") || text.startsWith("nbt:") || text.startsWith("bytes:")
+                || text.startsWith("item:") || text.startsWith("lib:");
     }
 
     /** 界面显示名：配置的 {@code display_name}/{@code label} 优先；否则返回 null（由界面按样品取名）。 */
@@ -225,7 +254,8 @@ final class ItemSpec {
             return "自定义物品";
         }
         if (material != null) {
-            return material;
+            // 完整物品规格是一大段 Base64/NBT 文本，不能直接当名字显示
+            return isEncodedSpec(material) ? "自定义物品" : material;
         }
         return String.join(",", rule.keySet());
     }

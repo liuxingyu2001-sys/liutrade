@@ -6,7 +6,7 @@
 
   <groupId>com.liuxingyu</groupId>
   <artifactId>LiuTrade</artifactId>
-  <version>0.4.4</version>
+  <version>0.4.5</version>
   <packaging>jar</packaging>
   <name>LiuTrade</name>
   <description>虚拟村民交易 - 读取独立 YAML，放入物品取出新物品（依赖 SoulSpace 规则/物品库）</description>
@@ -15,6 +15,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>21</maven.compiler.release>
     <paper.version>1.21.11-R0.1-SNAPSHOT</paper.version>
+    <liulib.version>1.0.5</liulib.version>
   </properties>
 
   <build>
@@ -104,6 +105,14 @@
       <groupId>io.papermc.paper</groupId>
       <artifactId>paper-api</artifactId>
       <version>${paper.version}</version>
+      <scope>provided</scope>
+    </dependency>
+    <!-- LiuLib：物品规格解析（ItemService#buildOrNull，完整物品/物品库引用）。
+         provided，运行时由服务器 plugins/LiuLib 提供（plugin.yml depend: [LiuLib]）。 -->
+    <dependency>
+      <groupId>com.liuxingyu</groupId>
+      <artifactId>LiuLib</artifactId>
+      <version>${liulib.version}</version>
       <scope>provided</scope>
     </dependency>
     <!-- 反应式容器界面框架（Apache-2.0）：与 SoulSpace 一致，shade 时整体 relocate。 -->

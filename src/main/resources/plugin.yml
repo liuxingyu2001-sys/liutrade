@@ -4,8 +4,9 @@ main: com.liuxingyu.liutrade.LiuTrade
 api-version: 1.21
 folia-supported: true
 authors: [liuxingyu2001]
-description: 虚拟村民交易 - 读取独立 YAML，放入物品取出新物品（依赖 SoulSpace）
-softdepend: [SoulSpace, Citizens]
+description: 虚拟村民交易 - 读取独立 YAML，放入物品取出新物品（依赖 LiuLib / SoulSpace）
+depend: [LiuLib]
+softdepend: [SoulSpace, Citizens, liuitemlib]
 commands:
   liutrade:
     description: 交易商店（打开 / 列表 / 重载）

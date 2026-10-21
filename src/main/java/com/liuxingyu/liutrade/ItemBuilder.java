@@ -40,8 +40,19 @@ final class ItemBuilder {
     private ItemBuilder() {
     }
 
-    /** 由材质 + 组件构建物品；材质非法返回 null（接受 DIAMOND/diamond/minecraft:diamond）。 */
+    /**
+     * 由材质 + 组件构建物品；材质非法返回 null（接受 DIAMOND/diamond/minecraft:diamond）。
+     *
+     * <p>先按 LiuLib 完整物品规格构建（{@code base64:}/{@code nbt:}/{@code bytes:}/
+     * {@code item:}/{@code lib:}/{@code ce:} 等，见 {@link LiuLibItems}），失败再走原版材质，
+     * 因此老的 {@code material: DIAMOND} 写法行为不变。</p>
+     */
     static ItemStack build(String material, Map<String, Object> components) {
+        ItemStack viaLib = LiuLibItems.buildOrNull(material);
+        if (viaLib != null) {
+            apply(viaLib, components);
+            return viaLib;
+        }
         Material type = Materials.resolve(material);
         if (type == null) {
             return null;
