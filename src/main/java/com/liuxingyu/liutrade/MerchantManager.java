@@ -2,6 +2,7 @@ package com.liuxingyu.liutrade;
 
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.Plugin;
 
 import java.io.File;
@@ -155,11 +156,16 @@ final class MerchantManager {
             warn("交易 " + id + " 的 inputs 必须为 1~" + Trade.MAX_INPUTS + " 项，已跳过。");
             return null;
         }
-        for (ItemSpec input : inputs) {
-            // 输入全部放在一个槽位，超过原版单槽上限（64）永远无法凑齐，提前提醒管理员。
-            if (input.amount > 64) {
-                warn("交易 " + id + " 的输入数量 " + input.amount
-                        + " 超过单槽上限 64，将永远无法完成，请拆成多笔或减小数量。");
+        if (plugin != null) {
+            SoulSpaceHook ss = plugin instanceof LiuTrade liuTrade ? liuTrade.soulSpace() : null;
+            for (ItemSpec input : inputs) {
+                // 输入全部放在一个槽位：超过该物品单堆叠上限就永远凑不齐，提前提醒管理员。
+                ItemStack sample = input.sample(ss);
+                int max = sample == null ? 64 : Math.max(1, sample.getMaxStackSize());
+                if (input.amount > max) {
+                    warn("交易 " + id + " 的输入数量 " + input.amount + " 超过该物品单槽上限 " + max
+                            + "，将永远无法完成，请拆成多笔交易或减小数量。");
+                }
             }
         }
         boolean hasItem = !outputs.isEmpty();
@@ -168,6 +174,9 @@ final class MerchantManager {
         if (convert && inputs.size() > 1) {
             warn("交易 " + id + " 使用 convert 时必须只有 1 个输入，已跳过。");
             return null;
+        }
+        if (convert && hasItem) {
+            warn("交易 " + id + " 同时配置了 outputs 与 convert: true，将按 outputs 发放（convert 被忽略）。");
         }
         if (!convert && !hasItem && !hasCommand) {
             warn("交易 " + id + " 既没有 outputs/commands 也没有 convert: true，已跳过。");
@@ -189,7 +198,8 @@ final class MerchantManager {
         trade.displayName = displayName != null && !String.valueOf(displayName).isBlank()
                 ? String.valueOf(displayName) : null;
         Object name = section.get("name");
-        trade.name = name != null ? String.valueOf(name) : inputs.get(0).label();
+        String nameText = name == null ? "" : String.valueOf(name).trim();
+        trade.name = nameText.isEmpty() ? inputs.get(0).label() : String.valueOf(name);
         Object permission = section.get("permission");
         trade.permission = permission != null ? String.valueOf(permission) : "";
         return trade;

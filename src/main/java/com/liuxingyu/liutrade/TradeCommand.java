@@ -218,6 +218,10 @@ final class TradeCommand implements CommandExecutor, TabCompleter {
             sender.sendMessage(plugin.prefixed("no-permission"));
             return;
         }
+        if (!merchant.permission.isBlank() && !target.hasPermission(merchant.permission)) {
+            sender.sendMessage(plugin.prefixed("no-permission"));
+            return;
+        }
         plugin.openMerchant(target, merchant, 0);
         if (!sender.equals(target)) {
             sender.sendMessage(Msg.color("&a已为 &f" + target.getName() + " &a打开商店 &f" + merchant.id));

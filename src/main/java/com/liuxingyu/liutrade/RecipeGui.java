@@ -33,9 +33,12 @@ final class RecipeGui {
 
     private final Player player;
     private final NormalWindow window;
+    /** 打开配方时输入槽里的实际物品（convert 交易用它预览；显式产出会忽略）。 */
+    private final ItemStack subject;
 
-    private RecipeGui(LiuTrade plugin, Player player, Trade trade, Runnable onEnd) {
+    private RecipeGui(LiuTrade plugin, Player player, Trade trade, ItemStack subject, Runnable onEnd) {
         this.player = player;
+        this.subject = subject;
         this.window = NormalWindow.builder()
                 .setTitleSupplier(() -> Msg.component("&8交易配方：&f" + tradeName(trade)))
                 .setUpperPane(buildPane(plugin, trade))
@@ -50,12 +53,22 @@ final class RecipeGui {
 
     /** 构造一扇作为交易界面下一级的配方窗（ESC 由 Sparrow 会话原生返回）。 */
     static RecipeGui child(LiuTrade plugin, Player player, Trade trade) {
-        return new RecipeGui(plugin, player, trade, null);
+        return child(plugin, player, trade, null);
+    }
+
+    /** 同上，但用输入槽里的实际物品预览 convert 产出。 */
+    static RecipeGui child(LiuTrade plugin, Player player, Trade trade, ItemStack subject) {
+        return new RecipeGui(plugin, player, trade, subject, null);
     }
 
     /** 作为根窗打开（原生村民界面用），关闭后回调 {@code onEnd}。 */
     static void openRoot(LiuTrade plugin, Player player, Trade trade, Runnable onEnd) {
-        new RecipeGui(plugin, player, trade, onEnd).window.open();
+        openRoot(plugin, player, trade, null, onEnd);
+    }
+
+    /** 同上，但用输入槽里的实际物品预览 convert 产出。 */
+    static void openRoot(LiuTrade plugin, Player player, Trade trade, ItemStack subject, Runnable onEnd) {
+        new RecipeGui(plugin, player, trade, subject, onEnd).window.open();
     }
 
     NormalWindow window() {
@@ -75,8 +88,8 @@ final class RecipeGui {
             pane.setElement(INPUT_SLOTS[index++], Element.item(Item.simple(inputIcon(plugin, spec))));
         }
 
-        // 产出：显式 outputs 或 convert 转换预览
-        List<ItemStack> outputs = plugin.service().previewAll(player, trade);
+        // 产出：显式 outputs，或 convert 用输入槽里的实际物品预览（与点击后的结果一致）
+        List<ItemStack> outputs = plugin.service().produceAll(player, trade, subject);
 
         // 箭头
         pane.setElement(SLOT_ARROW, Element.item(Item.simple(arrow(outputs.size(), trade.hasCommands()))));

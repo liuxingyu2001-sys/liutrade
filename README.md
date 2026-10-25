@@ -45,7 +45,8 @@
 | `liutrade.admin.reload` | op | 重载配置 |
 | `liutrade.admin.give` | op | 直接发放交易的产出物品 |
 
-单笔交易还可在 YAML 里写 `permission:` 限制、`description:` 写界面说明。
+单笔交易还可在 YAML 里写 `permission:` 限制、`description:` 写界面说明。权限不足的交易仍会列在界面里，
+但图标会显示「需要权限」且不能自动放入/成交（原生村民界面会直接隐藏该笔）。
 
 ## 商店配置
 
@@ -91,6 +92,9 @@ trades:
         amount: 1
 ```
 
+输入的 `amount` 不能超过该物品的单槽堆叠上限（多数物品 64，末影珍珠/雪球等 16）：
+一个输入槽只放一份，超限的交易永远无法完成，加载时会输出警告；需要大量请拆成多笔交易。
+
 自定义界面布局（`gui-mode: custom`）：玻璃板做边框与分隔，每行 4 笔交易（每页 12 笔）；
 顶部一行是「上一页 / 关闭 / 怎么用 / 下一页」；下方是输入槽 `[输入1] [输入2] …` 与 `→ [产出]`，
 输入槽数量按本商店需要几个物品**动态显示**（最多 6 个）；左键交易可自动放入，也支持手动放。
@@ -103,11 +107,13 @@ trades:
 | 物品库（CE/MM/IE/原版） | `library_id: "ce:ns:id"` | 先经 LiuLib（CE 物品）解析，失败再经 SoulSpace `resolveItem`，按 `isSimilar` 匹配 |
 | LiuLib 完整物品规格 | `library_id: "base64:..."` / `"nbt:..."` / `"lib:gift:spring_2026"` | 由 LiuLib `ItemCodec` 反序列化/物品库解析，按 `isSimilar` 精确匹配 |
 | 材质 + 组件 | `material: PAPER` + `components: {...}` | 用组件构建自定义物品，按 `isSimilar` 匹配 |
+| 材质 + 数量写法 | `material: DIAMOND*3` / `DIAMOND:3` / `minecraft:diamond:3` | 等价于 `material: DIAMOND` + `amount: 3`（显式 `amount` 优先） |
+| 非原版命名空间材质 | `material: "ce:ns:id"` | 与 `library_id` 等价，按 LiuLib 解析结果 `isSimilar` 精确匹配（不是 SoulSpace 材质规则） |
 | 全保真 | `bytes: "<Base64>"` | 先经 LiuLib 反序列化（兼容 Paper 二进制与旧对象流），失败回退 `ItemStack.serializeAsBytes()` |
 | 规则字段 | `material: PAPER` + `pdc: jiu:jiu` | 经 SoulSpace `matchesRule` 匹配（支持 `not_pdc` 等否定） |
 | 显示物品（仅界面） | `display: { library_id: "ce:ns:id" }` | 图标显示该物品，匹配仍按规则字段 |
 | 显示名字（仅界面） | `display_name: "&6神秘票券"`（别名 `label`） | 界面/lore 显示的名字，不再显示 pdc/英文名 |
-| 数量 | `amount: 8` | 一笔所需/产出数量，默认 1 |
+| 数量 | `amount: 8` | 一笔所需/产出数量，默认 1；也可写在 `material` 里（见上）。输入受单槽上限限制（见下） |
 
 **LiuLib 物品规格**（`inputs` / `outputs` / `icon` / `display` 里的 `material`、`library_id` 以及字符串
 简写都可用）：`base64:...` / `nbt:...` / `bytes:...` / `item:base64:...` 完整物品（数据组件、PDC、CE
@@ -115,6 +121,10 @@ trades:
 **liuitemlib**，且 `plugin.yml` 已把 liuitemlib 加入 `softdepend`）、以及 `DIAMOND` / `minecraft:diamond` /
 `DIAMOND:3` / `DIAMOND*3` 常规写法。解析顺序是 **LiuLib 优先、原逻辑兜底**：LiuLib 解析失败（或旧版
 SoulSpace 未装）时自动回退到原来的材质 / SoulSpace `resolveItem` 逻辑，老配置行为不变。
+
+`material` 里的 `DIAMOND*3` / `DIAMOND:3` / `minecraft:diamond:3` 会被归一成 `material: DIAMOND` +
+`amount: 3`（显式 `amount` 优先）；`material: "ce:命名空间:id"` 这类非原版命名空间按 LiuLib 物品
+规格精确匹配。通配写法（`SHULKER_*` / `*SWORD*`）仍走 SoulSpace 规则，不会被当成物品规格。
 
 ```yaml
 trades:
@@ -157,7 +167,8 @@ inputs:
 
 > 含否定字段的输入需要 `settings.gui-mode: custom`（原生村民界面无法表达否定，会跳过该笔）；
 > 依赖 SoulSpace **2.5.0+**，未装/旧版时**失败关闭**（不匹配任何物品），避免同材质物品绕过。
-> 注意：若同一输入还写了 `components`/`library_id`/`bytes`（走精确匹配），否定字段不生效。
+> 注意：若同一输入还写了 `components`/`library_id`/`bytes`，或 `material` 本身就是 `ce:` 这类
+LiuLib 物品规格（走精确匹配），否定字段不生效。
 
 **`components`** 键可带或不带 `minecraft:` 前缀：`custom_name` / `item_name` / `lore` /
 `custom_model_data` / `enchantments`(或 `stored_enchantments`) / `unbreakable` / `rarity` /
@@ -248,14 +259,16 @@ trades:
 
 自定义界面里：左键交易图标自动放入所需物品，也可手动把物品放进输入槽；左键产出槽成交 1 次，
 Shift+左键成交全部；关界面时输入槽里没取走的物品会退回背包（`settings.leftover-on-close: void` 可改为丢弃）。
+`convert: true` 的交易会用输入槽里的**实际物品**跑转换来预览产出，预览与点击后的结果一致；
+交易带 `permission:` 时，没权限的玩家会看到锁定提示，且不会被自动放入或成交。
 纯指令产出的产出格是命令块：配了 `display_name` 就只显示这个名字（图标名与 lore 都不再露出指令），
 没配则显示第一条原生指令并在 lore 里列出全部指令；交易列表的「获得」同样遵循这一规则。
 
 ### 查看交易配方
 
 右击**交易图标**或**产出槽**即可查看这笔交易**自己配置的输入 → 输出**（不是原版工作台配方）：左侧 3×3
-摆需要放入的物品及数量，中间箭头，右侧摆可换到的产出；`convert: true` 的交易显示 SoulSpace 转换预览，
-有指令产出时额外显示命令块。按 **ESC** 或点「返回」回到交易界面；原生村民界面下**右键产出格**同样
+摆需要放入的物品及数量，中间箭头，右侧摆可换到的产出；`convert: true` 的交易显示 SoulSpace 转换预览
+（有实际输入物品时按它预览），有指令产出时额外显示命令块。按 **ESC** 或点「返回」回到交易界面；原生村民界面下**右键产出格**同样
 可以查看，关闭后自动回到村民界面。
 
 ## 主要配置（config.yml）
@@ -269,6 +282,8 @@ Shift+左键成交全部；关界面时输入槽里没取走的物品会退回�
 | `settings.leftover-on-close` | return | 自定义界面关界面时输入槽物品处理：`return` / `void` |
 | `settings.feedback` | true | 交易成功是否提示 |
 | `settings.max-pages` | 20 | 自定义界面翻页上限 |
+
+> `messages.*` 缺键时自动使用 jar 内置的默认文案（升级新增的消息不需要手动补）。
 
 ## 构建
 

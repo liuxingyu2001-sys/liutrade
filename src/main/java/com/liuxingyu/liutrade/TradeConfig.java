@@ -20,14 +20,29 @@ final class TradeConfig {
 
     void load(FileConfiguration cfg) {
         Map<String, String> next = new HashMap<>();
-        sharedConfigPath = cfg.getString("settings.shared-config-path", "");
+        sharedConfigPath = cfg.getString("settings.shared-config-path", "").trim();
         autoReload = cfg.getBoolean("settings.auto-reload", true);
         pollIntervalTicks = Math.max(20, cfg.getInt("settings.poll-interval-ticks", 200));
-        leftoverOnClose = cfg.getString("settings.leftover-on-close", "return");
+        String leftover = cfg.getString("settings.leftover-on-close", "return");
+        leftoverOnClose = "void".equalsIgnoreCase(leftover == null ? "" : leftover.trim()) ? "void" : "return";
         feedback = cfg.getBoolean("settings.feedback", true);
         maxPages = Math.max(1, cfg.getInt("settings.max-pages", 20));
-        guiMode = "custom".equalsIgnoreCase(cfg.getString("settings.gui-mode", "villager")) ? "custom" : "villager";
+        guiMode = "custom".equalsIgnoreCase(cfg.getString("settings.gui-mode", "villager").trim()) ? "custom" : "villager";
 
+        // 老配置里没有新版本新增的 message 键：先把 jar 内置默认值铺一层，再用用户配置覆盖，
+        // 避免升级后玩家看到 "trade-locked" 这种原始键名。
+        if (cfg.getDefaults() != null) {
+            org.bukkit.configuration.ConfigurationSection defaults =
+                    cfg.getDefaults().getConfigurationSection("messages");
+            if (defaults != null) {
+                for (String key : defaults.getKeys(false)) {
+                    String value = defaults.getString(key);
+                    if (value != null) {
+                        next.put(key, value);
+                    }
+                }
+            }
+        }
         if (cfg.isConfigurationSection("messages")) {
             for (String key : cfg.getConfigurationSection("messages").getKeys(false)) {
                 String value = cfg.getString("messages." + key);

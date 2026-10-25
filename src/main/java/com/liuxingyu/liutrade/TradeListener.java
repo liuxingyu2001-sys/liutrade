@@ -42,7 +42,7 @@ final class TradeListener implements Listener {
         event.setCancelled(true);
         Trade trade = session.tradeAt(merchantInventory.getSelectedRecipeIndex());
         if (trade != null) {
-            plugin.openRecipeFromNative(player, session, trade);
+            plugin.openRecipeFromNative(player, session, trade, merchantInventory.getItem(0));
         }
     }
 
@@ -85,12 +85,18 @@ final class TradeListener implements Listener {
         if (!(top instanceof MerchantInventory inventory)) {
             return;
         }
+        Trade trade = session.tradeAt(inventory.getSelectedRecipeIndex());
+        // 权限可能在会话期间被撤销：成交前再校验一次。
+        if (trade != null && !trade.permission.isBlank() && !player.hasPermission(trade.permission)) {
+            event.setCancelled(true);
+            player.sendMessage(plugin.prefixed("trade-locked", "%permission%", trade.permission));
+            return;
+        }
         if (!session.validate(inventory)) {
             event.setCancelled(true);
             player.sendMessage(plugin.prefixed("trade-fail"));
             return;
         }
-        Trade trade = session.tradeAt(inventory.getSelectedRecipeIndex());
         if (trade != null) {
             session.grantExtras(player, trade, inventory.getItem(0));
             plugin.service().runCommands(player, trade, 1);

@@ -47,7 +47,9 @@ final class Materials {
         }
         try {
             Material material = Material.matchMaterial(name);
-            return material == null || material.isAir() ? null : material;
+            // 不用 isAir()：Paper 的 isAir() 会触发 RegistryAccess（单元测试/极早期加载时没有注册表）。
+            return material == null || material == Material.AIR
+                    || material == Material.CAVE_AIR || material == Material.VOID_AIR ? null : material;
         } catch (Throwable t) {
             return null;
         }

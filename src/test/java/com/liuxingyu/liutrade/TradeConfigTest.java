@@ -31,4 +31,33 @@ class TradeConfigTest {
         assertEquals(20, config.pollIntervalTicks, "轮询间隔下限 20 tick");
         assertEquals(1, config.maxPages);
     }
+
+    @Test
+    void missingMessagesFallBackToJarDefaults() {
+        YamlConfiguration defaults = new YamlConfiguration();
+        defaults.set("messages.prefix", "&8[&6交易&8] ");
+        defaults.set("messages.trade-locked", "&c需要权限：&f%permission%");
+        YamlConfiguration cfg = new YamlConfiguration();
+        cfg.setDefaults(defaults);
+        cfg.set("messages.prefix", "&7[P] ");
+
+        TradeConfig config = new TradeConfig();
+        config.load(cfg);
+
+        assertEquals(Msg.color("&7[P] ") + Msg.color("&c需要权限：&fVIP"),
+                config.prefixed("trade-locked", "%permission%", "VIP"));
+    }
+
+    @Test
+    void leftoverOnCloseOnlyAcceptsVoid() {
+        YamlConfiguration cfg = new YamlConfiguration();
+        cfg.set("settings.leftover-on-close", "void");
+        TradeConfig config = new TradeConfig();
+        config.load(cfg);
+        assertEquals("void", config.leftoverOnClose);
+
+        cfg.set("settings.leftover-on-close", "keep");
+        config.load(cfg);
+        assertEquals("return", config.leftoverOnClose);
+    }
 }

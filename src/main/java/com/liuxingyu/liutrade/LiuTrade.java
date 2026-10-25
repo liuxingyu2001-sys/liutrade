@@ -192,6 +192,10 @@ public final class LiuTrade extends JavaPlugin {
         if (merchant == null) {
             return;
         }
+        if (!player.hasPermission("liutrade.use")) {
+            player.sendMessage(prefixed("no-permission"));
+            return;
+        }
         if (!merchant.permission.isBlank() && !player.hasPermission(merchant.permission)) {
             player.sendMessage(prefixed("no-permission"));
             return;
@@ -249,8 +253,18 @@ public final class LiuTrade extends JavaPlugin {
     /** 打开 Sparrow 自定义界面（已确保在玩家所属线程执行）。 */
     private void openCustomNow(Player player, Merchant merchant, int page) {
         TradeGui gui = new TradeGui(this, player, merchant, page);
-        open.put(player.getUniqueId(), gui);
-        gui.open();
+        TradeGui previous = open.put(player.getUniqueId(), gui);
+        try {
+            gui.open();
+        } catch (Throwable failure) {
+            // 开窗失败时别把半初始化的界面留在 open 里（退出时会去退一个从未显示的输入槽）。
+            if (previous != null) {
+                open.put(player.getUniqueId(), previous);
+            } else {
+                open.remove(player.getUniqueId(), gui);
+            }
+            throw failure;
+        }
     }
 
     NativeShopSession nativeSession(org.bukkit.inventory.Merchant handle) {
@@ -277,7 +291,7 @@ public final class LiuTrade extends JavaPlugin {
             return;
         }
         try {
-            gui.navigateTo(RecipeGui.child(this, player, trade));
+            gui.navigateTo(RecipeGui.child(this, player, trade, gui.inputAt(0)));
         } catch (Throwable failure) {
             getLogger().warning("打开交易配方失败：" + failure);
             player.sendMessage(prefixed("recipe-none"));
@@ -285,7 +299,7 @@ public final class LiuTrade extends JavaPlugin {
     }
 
     /** 原生村民界面：右键产出格 → 查看配方，关闭后重新打开村民界面。 */
-    void openRecipeFromNative(Player player, NativeShopSession session, Trade trade) {
+    void openRecipeFromNative(Player player, NativeShopSession session, Trade trade, ItemStack subject) {
         if (!SparrowBootstrap.ready()) {
             player.sendMessage(prefixed("recipe-none"));
             return;
@@ -293,7 +307,7 @@ public final class LiuTrade extends JavaPlugin {
         // 打开配方窗会先关掉村民容器，这里标记会话不要被遗忘，返回时才能重开。
         navigatingNative.add(session.handle());
         try {
-            RecipeGui.openRoot(this, player, trade, () -> {
+            RecipeGui.openRoot(this, player, trade, subject, () -> {
                 navigatingNative.remove(session.handle());
                 // 会话结束当刻直接开原生容器可能与会话收尾相冲，放到下一 tick 的玩家线程。
                 Sched.runForPlayer(this, player, () -> {

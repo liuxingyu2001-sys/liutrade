@@ -15,7 +15,9 @@ import java.util.Map;
  *       {@code bytes:}/{@code item:}/{@code lib:}/{@code ce:}），失败再走 SoulSpace {@code resolveItem}
  *       （CE/MM/IE/原版材质）；</li>
  *   <li>{@code material: PAPER} + {@code components: {...}} —— 用组件构建自定义物品（见 {@link ItemBuilder}）；
- *       该键同样接受 LiuLib 完整物品规格；</li>
+ *       该键同样接受 LiuLib 完整物品规格（{@code ce:}/{@code base64:}/{@code lib:}…）、
+ *       数量写法（{@code DIAMOND*3} / {@code DIAMOND:3} / {@code minecraft:diamond:3}）
+ *       以及 SoulSpace 通配（{@code SHULKER_*} / {@code *SWORD*}）；</li>
  *   <li>{@code bytes: "<base64>"} —— {@code ItemStack.serializeAsBytes()} 的全保真通道（任意物品）；</li>
  *   <li>规则字段（{@code pdc}/{@code name}/{@code lore}/{@code custom_model_data} 及 {@code not_*}）
  *       —— 经 SoulSpace {@code matchesRule} 匹配；</li>
@@ -32,6 +34,11 @@ final class ItemSpec {
     final Map<String, Object> components;
     final Map<String, Object> rule;
     final int amount;
+    /**
+     * {@code material} 是否为 LiuLib 完整物品规格（{@code ce:}/{@code mm:}/{@code base64:}/{@code lib:}…）。
+     * 这类值没有原版 {@link Material} 可匹配，只能按样例 {@code isSimilar} 精确匹配。
+     */
+    final boolean opaqueMaterial;
     /** 仅用于界面显示的物品规格（可为 null）；匹配仍走 {@link #rule}/{@link #material}。 */
     final ItemSpec display;
     /** 仅用于界面显示的名字（可为 null）。 */
@@ -50,17 +57,24 @@ final class ItemSpec {
         this.amount = Math.max(1, amount);
         this.display = display;
         this.displayName = displayName;
+        this.opaqueMaterial = isOpaqueSpec(material);
     }
 
     static ItemSpec parse(Object raw) {
         if (raw instanceof String s && !s.isBlank()) {
             String value = s.trim();
+            int amount = 1;
+            String[] split = splitCount(value);
+            if (split != null) {
+                value = split[0];
+                amount = Integer.parseInt(split[1]);
+            }
             int colon = value.indexOf(':');
             if (colon > 0) {
                 String namespace = value.substring(0, colon).toLowerCase(java.util.Locale.ROOT);
                 if (!namespace.equals("minecraft") && !namespace.equals("mc") && !namespace.equals("vanilla")) {
                     // 字符串简写也接受物品库 id（ce:/mm:/ie:...），与 library_id 等价。
-                    return new ItemSpec(value, null, null, Map.of(), Map.of(), 1, null, null);
+                    return new ItemSpec(value, null, null, Map.of(), Map.of(), amount, null, null);
                 }
             }
             String mat = Materials.canonical(value);
@@ -69,12 +83,13 @@ final class ItemSpec {
             }
             Map<String, Object> rule = new LinkedHashMap<>();
             rule.put("material", mat);
-            return new ItemSpec(null, null, mat, Map.of(), rule, 1, null, null);
+            return new ItemSpec(null, null, mat, Map.of(), rule, amount, null, null);
         }
         if (!(raw instanceof Map<?, ?> map)) {
             return null;
         }
         int amount = 1;
+        boolean amountExplicit = map.containsKey("amount");
         Object amountRaw = map.get("amount");
         if (amountRaw instanceof Number n) {
             amount = n.intValue();
@@ -86,6 +101,16 @@ final class ItemSpec {
             }
         }
         String libraryId = blankToNull(map.get("library_id"));
+        if (libraryId != null) {
+            // library_id 也接受 DIAMOND*3 / minecraft:diamond:3：拆出数量后交给 LiuLib 解析基础物品
+            String[] split = splitCount(libraryId);
+            if (split != null) {
+                libraryId = split[0];
+                if (!amountExplicit) {
+                    amount = Integer.parseInt(split[1]);
+                }
+            }
+        }
         String bytes = blankToNull(map.get("bytes"));
         if (bytes == null) {
             bytes = blankToNull(map.get("base64"));
@@ -108,17 +133,23 @@ final class ItemSpec {
                     || key.equals("display") || key.equals("display_name") || key.equals("label")) {
                 continue;
             }
-            rule.put(key, entry.getValue());
             if (key.equals("material")) {
-                String canonical = Materials.canonical(String.valueOf(entry.getValue()));
-                if (canonical != null) {
-                    // 归一为枚举名（DIAMOND），保证 SoulSpace 规则匹配与旧版兼容
-                    material = canonical;
-                    rule.put(key, canonical);
-                } else {
-                    material = String.valueOf(entry.getValue()).trim();
+                String text = String.valueOf(entry.getValue()).trim();
+                String[] split = splitCount(text);
+                if (split != null) {
+                    text = split[0];
+                    if (!amountExplicit) {
+                        // 兼容 LiuLib 数量写法：DIAMOND*3 / DIAMOND:3 / minecraft:diamond:3
+                        amount = Integer.parseInt(split[1]);
+                    }
                 }
+                String canonical = Materials.canonical(text);
+                // 归一为枚举名（DIAMOND）；非原版命名空间（ce:/mm:/lib:…）保留原文，按 LiuLib 规格精确匹配
+                material = canonical != null ? canonical : text;
+                rule.put(key, material);
+                continue;
             }
+            rule.put(key, entry.getValue());
         }
         if (libraryId == null && bytes == null && material == null && rule.isEmpty()) {
             return null;
@@ -167,6 +198,13 @@ final class ItemSpec {
             return type == null ? null : new ItemStack(type);
         }
         if (material != null) {
+            // 非原版命名空间（ce:/mm:/ia:…）也允许 SoulSpace 物品库兜底，兼容旧配置。
+            if (opaqueMaterial && components.isEmpty() && ss != null) {
+                ItemStack viaSoulSpace = ss.resolveItem(material).orElse(null);
+                if (viaSoulSpace != null) {
+                    return viaSoulSpace;
+                }
+            }
             // ItemBuilder 内部同样先试 LiuLib，材质/组件逻辑保持原样
             return ItemBuilder.build(material, components);
         }
@@ -184,7 +222,7 @@ final class ItemSpec {
             return false;
         }
         boolean exact = libraryId != null || bytes != null
-                || (material != null && (!components.isEmpty() || isEncodedSpec(material)));
+                || (material != null && (!components.isEmpty() || opaqueMaterial));
         if (exact) {
             ItemStack sample = sample(ss);
             return sample != null && item.isSimilar(sample);
@@ -221,23 +259,75 @@ final class ItemSpec {
      */
     boolean nativeRepresentable() {
         if (libraryId != null || bytes != null || !components.isEmpty()
-                || (material != null && isEncodedSpec(material))) {
+                || (material != null && opaqueMaterial)) {
             return true;
         }
         return rule.size() == 1 && rule.containsKey("material");
     }
 
     /**
-     * {@code material} 是否 LiuLib 完整物品规格（{@code base64:}/{@code nbt:}/{@code bytes:}/
-     * {@code item:}/{@code lib:}）。这类写法没有原版材质可匹配，只能按样例 {@code isSimilar} 精确匹配。
+     * {@code material} 是否 LiuLib 完整物品规格 / 非原版命名空间（{@code base64:}/{@code nbt:}/
+     * {@code bytes:}/{@code item:}/{@code lib:}/{@code ce:}…）。这类写法没有原版材质可匹配，
+     * 只能按样例 {@code isSimilar} 精确匹配；通配写法（{@code SHULKER_*}）不在此列，仍走 SoulSpace 规则。
      */
-    static boolean isEncodedSpec(String raw) {
+    static boolean isOpaqueSpec(String raw) {
         if (raw == null) {
             return false;
         }
         String text = raw.trim().toLowerCase(java.util.Locale.ROOT);
-        return text.startsWith("base64:") || text.startsWith("nbt:") || text.startsWith("bytes:")
-                || text.startsWith("item:") || text.startsWith("lib:");
+        if (text.isEmpty()) {
+            return false;
+        }
+        if (text.startsWith("base64:") || text.startsWith("nbt:") || text.startsWith("bytes:")
+                || text.startsWith("item:") || text.startsWith("lib:")) {
+            return true;
+        }
+        int colon = text.indexOf(':');
+        if (colon > 0) {
+            String namespace = text.substring(0, colon);
+            return !namespace.equals("minecraft") && !namespace.equals("mc") && !namespace.equals("vanilla");
+        }
+        return false;
+    }
+
+    /**
+     * 拆分材质数量写法（{@code DIAMOND*3} / {@code DIAMOND:3} / {@code minecraft:diamond:3}），
+     * 返回 {@code [材质部分, 数量]}；不是数量写法时返回 null。
+     */
+    private static String[] splitCount(String raw) {
+        String text = raw == null ? "" : raw.trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        int star = text.lastIndexOf('*');
+        if (star > 0 && star == text.indexOf('*')) {
+            String digits = text.substring(star + 1).trim();
+            String base = text.substring(0, star).trim();
+            if (!base.isEmpty() && positiveInt(digits)) {
+                return new String[]{base, digits};
+            }
+        }
+        int colon = text.lastIndexOf(':');
+        if (colon > 0) {
+            String digits = text.substring(colon + 1).trim();
+            String base = text.substring(0, colon).trim();
+            // 只有「:数字」且前半部分能解析成原版材质时才算数量，避免误伤 ce:ns:123 这类物品库 id。
+            if (Materials.resolve(base) != null && positiveInt(digits)) {
+                return new String[]{base, digits};
+            }
+        }
+        return null;
+    }
+
+    private static boolean positiveInt(String text) {
+        if (text.isEmpty()) {
+            return false;
+        }
+        try {
+            return Integer.parseInt(text) > 0;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 
     /** 界面显示名：配置的 {@code display_name}/{@code label} 优先；否则返回 null（由界面按样品取名）。 */
@@ -254,8 +344,8 @@ final class ItemSpec {
             return "自定义物品";
         }
         if (material != null) {
-            // 完整物品规格是一大段 Base64/NBT 文本，不能直接当名字显示
-            return isEncodedSpec(material) ? "自定义物品" : material;
+            // 完整物品规格是一大段 Base64/NBT 文本或命名空间 id，不能直接当名字显示
+            return opaqueMaterial ? "自定义物品" : material;
         }
         return String.join(",", rule.keySet());
     }

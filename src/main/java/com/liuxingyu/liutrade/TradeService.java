@@ -51,6 +51,15 @@ final class TradeService {
             player.sendMessage(plugin.prefixed("trade-fail"));
             return false;
         }
+        // 防御性复核：扣物品前再确认每个输入槽仍然匹配，避免界面状态异常时“没扣材料却发产出”。
+        for (int i = 0; i < trade.inputs.size(); i++) {
+            ItemStack item = gui.inputAt(i);
+            if (item == null || item.getType().isAir()
+                    || !trade.inputs.get(i).matches(item, plugin.soulSpace())) {
+                player.sendMessage(plugin.prefixed("trade-fail"));
+                return false;
+            }
+        }
         List<ItemStack> outputs = new ArrayList<>();
         if (trade.hasItemOutput()) {
             // 输入扣除在下面统一进行；同一份输入重复 times 次的结果是确定的，

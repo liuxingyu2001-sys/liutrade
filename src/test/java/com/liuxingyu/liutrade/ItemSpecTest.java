@@ -101,4 +101,47 @@ class ItemSpecTest {
         assertFalse(ItemSpec.parse("PAPER").requiresRules());
         assertFalse(ItemSpec.parse(Map.of("material", "DIAMOND", "amount", 3)).requiresRules());
     }
+
+    @Test
+    void materialSupportsCountSuffix() {
+        ItemSpec star = ItemSpec.parse(Map.of("material", "DIAMOND*3"));
+        assertEquals("DIAMOND", star.material);
+        assertEquals(3, star.amount);
+        assertFalse(star.opaqueMaterial);
+
+        ItemSpec colon = ItemSpec.parse(Map.of("material", "minecraft:diamond:2"));
+        assertEquals("DIAMOND", colon.material);
+        assertEquals(2, colon.amount);
+
+        ItemSpec shorthand = ItemSpec.parse("DIAMOND*4");
+        assertEquals("DIAMOND", shorthand.material);
+        assertEquals(4, shorthand.amount);
+
+        // 显式 amount 优先于材质里自带的数量
+        ItemSpec explicit = ItemSpec.parse(Map.of("material", "DIAMOND*3", "amount", 5));
+        assertEquals("DIAMOND", explicit.material);
+        assertEquals(5, explicit.amount);
+
+        // library_id 同样兼容数量写法
+        ItemSpec library = ItemSpec.parse(Map.of("library_id", "DIAMOND*2"));
+        assertEquals("DIAMOND", library.libraryId);
+        assertEquals(2, library.amount);
+    }
+
+    @Test
+    void opaqueMaterialSpecsAreExactNotRuleMatched() {
+        ItemSpec ce = ItemSpec.parse(Map.of("material", "ce:ns:id"));
+        assertEquals("ce:ns:id", ce.material);
+        assertTrue(ce.opaqueMaterial);
+        assertTrue(ce.nativeRepresentable());
+
+        ItemSpec encoded = ItemSpec.parse(Map.of("material", "base64:AAAA"));
+        assertTrue(encoded.opaqueMaterial);
+        assertEquals("自定义物品", encoded.label());
+
+        // 通配写法仍走 SoulSpace 规则，不能被当成 LiuLib 物品规格
+        ItemSpec wildcard = ItemSpec.parse(Map.of("material", "shulker_*"));
+        assertFalse(wildcard.opaqueMaterial);
+        assertEquals("SHULKER_*", wildcard.material);
+    }
 }

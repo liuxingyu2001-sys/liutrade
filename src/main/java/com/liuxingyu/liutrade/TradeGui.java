@@ -208,6 +208,9 @@ final class TradeGui {
                     if (click.clickType().isRightClick()) {
                         plugin.openRecipeFromGui(click.player(), this, trade);
                     } else {
+                        if (!requirePermission(trade)) {
+                            return;
+                        }
                         plugin.service().execute(click.player(), this, trade,
                                 click.clickType().isShiftClick() ? batches(trade) : 1);
                     }
@@ -283,7 +286,28 @@ final class TradeGui {
             if (empty) {
                 return staticItem(Material.GRAY_STAINED_GLASS_PANE, "&7产出",
                         List.of(Msg.color("&7把物品放进左边的输入槽"),
-                                Msg.color("&7或左键下方交易自动放入")));
+                                Msg.color("&7或左键上方交易自动放入")));
+            }
+            Trade lockedTrade = lockedMatch();
+            if (lockedTrade != null) {
+                return staticItem(Material.BARRIER, "&c需要权限",
+                        List.of(Msg.color("&7这些物品可以交易，但缺少权限："),
+                                Msg.color("&f" + lockedTrade.permission)));
+            }
+            Trade closest = closestTrade();
+            if (closest != null) {
+                List<String> lore = new ArrayList<>();
+                lore.add(Msg.color("&7这笔交易还差："));
+                for (int i = 0; i < closest.inputs.size(); i++) {
+                    ItemSpec spec = closest.inputs.get(i);
+                    int have = matchingAmount(i, spec);
+                    if (have < spec.amount) {
+                        lore.add(Msg.color("  &8· &f" + specName(spec) + " &7还差 &f" + (spec.amount - have)));
+                    }
+                }
+                lore.add("");
+                lore.add(Msg.color("&e左键这笔交易 &7：自动补足"));
+                return staticItem(Material.BARRIER, "&c还差一点", lore);
             }
             return staticItem(Material.BARRIER, "&c没有匹配的交易",
                     List.of(Msg.color("&7这些物品换不到东西"),
@@ -403,8 +427,13 @@ final class TradeGui {
         }
         int batches = batches(trade);
         lore.add("");
-        lore.add(Msg.color(batches > 0 ? "&7你当前可交易 &a" + batches + " &7次" : "&c物品不足"));
-        lore.add(Msg.color("&e左键：自动放入所有可用物品"));
+        if (locked(trade)) {
+            lore.add(Msg.color("&c需要权限：&f" + trade.permission));
+            lore.add(Msg.color("&8解锁后才能交易"));
+        } else {
+            lore.add(Msg.color(batches > 0 ? "&7你当前可交易 &a" + batches + " &7次" : "&c物品不足"));
+            lore.add(Msg.color("&e左键：自动放入所有可用物品"));
+        }
         if (first != null && !first.nativeRepresentable()) {
             lore.add(Msg.color("&8（按规则匹配）"));
         }
@@ -418,7 +447,8 @@ final class TradeGui {
 
     /** 交易列表图标底物（缓存）：交易自定义 display → 首个产出（显式 outputs 或 convert 预览）→ 输入[0] → 商店图标 → 箱子。 */
     private ItemStack baseIcon(Trade trade, int index) {
-        ItemStack cached = iconCache.get(index);
+        // convert 的预览随输入槽物品变化，不能按交易下标永久缓存。
+        ItemStack cached = trade.convert ? null : iconCache.get(index);
         if (cached != null) {
             return cached;
         }
@@ -439,12 +469,32 @@ final class TradeGui {
         }
         ItemStack icon = sample != null ? sample.clone() : new ItemStack(Material.CHEST);
         icon.setAmount(1);
-        iconCache.put(index, icon);
+        if (!trade.convert) {
+            iconCache.put(index, icon);
+        }
         return icon;
     }
 
-    /** 产出预览（缓存，避免每次渲染重复跑转换规则）。 */
+    /**
+     * 产出预览。
+     *
+     * <p>{@code convert} 交易必须用输入槽里**实际**的物品跑转换（例如输入带 PDC 的票券），
+     * 否则会用样品去转换、预览成另一个物品或直接失败，和点击后的结果不一致；
+     * 输入槽为空时才退回样品预览，让玩家先看到大致能换到什么。</p>
+     */
     private List<ItemStack> previews(Trade trade) {
+        if (trade.convert) {
+            ItemStack input = inputAt(0);
+            ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
+            if (input != null && first != null && !input.getType().isAir()
+                    && input.getAmount() >= first.amount) {
+                List<ItemStack> actual = plugin.service().produceAll(player, trade, input);
+                if (!actual.isEmpty()) {
+                    return actual;
+                }
+            }
+            return plugin.service().previewAll(player, trade);
+        }
         int index = merchant.trades.indexOf(trade);
         if (index < 0) {
             return plugin.service().previewAll(player, trade);
@@ -488,15 +538,72 @@ final class TradeGui {
     /** 当前要展示/执行的交易：优先选中的（且输入满足），否则第一个输入满足的。 */
     Trade currentTrade() {
         if (selected >= 0 && selected < merchant.trades.size()
+                && !locked(merchant.trades.get(selected))
                 && batches(merchant.trades.get(selected)) > 0) {
             return merchant.trades.get(selected);
         }
         for (Trade trade : merchant.trades) {
-            if (batches(trade) > 0) {
+            if (!locked(trade) && batches(trade) > 0) {
                 return trade;
             }
         }
         return null;
+    }
+
+    /** 输入已满足、但当前玩家没权限的交易（用于产出格提示）。 */
+    private Trade lockedMatch() {
+        for (Trade trade : merchant.trades) {
+            if (locked(trade) && batches(trade) > 0) {
+                return trade;
+            }
+        }
+        return null;
+    }
+
+    /** 输入槽已放了一部分时，找最接近完成的那笔交易（用于「还差多少」提示）。 */
+    private Trade closestTrade() {
+        Trade best = null;
+        int bestMatched = 0;
+        for (Trade trade : merchant.trades) {
+            if (locked(trade)) {
+                continue;
+            }
+            int matched = 0;
+            for (int i = 0; i < trade.inputs.size(); i++) {
+                if (matchingAmount(i, trade.inputs.get(i)) > 0) {
+                    matched++;
+                }
+            }
+            if (matched > bestMatched) {
+                best = trade;
+                bestMatched = matched;
+            }
+        }
+        return best;
+    }
+
+    /** 输入槽 {@code slot} 里符合该规格的物品数量（不匹配返回 0）。 */
+    private int matchingAmount(int slot, ItemSpec spec) {
+        ItemStack item = inputs.itemAt(slot);
+        if (item == null || item.getType().isAir() || !spec.matches(item, plugin.soulSpace())) {
+            return 0;
+        }
+        return item.getAmount();
+    }
+
+    /** 当前玩家是否缺少该交易配置的 {@code permission}。 */
+    boolean locked(Trade trade) {
+        return trade.permission != null && !trade.permission.isBlank()
+                && !player.hasPermission(trade.permission);
+    }
+
+    /** 交易前检查权限；没有权限时发提示并返回 false。 */
+    private boolean requirePermission(Trade trade) {
+        if (!locked(trade)) {
+            return true;
+        }
+        player.sendMessage(plugin.prefixed("trade-locked", "%permission%", trade.permission));
+        return false;
     }
 
     /** 当前输入槽能满足该交易的份数（0 = 不匹配）。 */
@@ -534,13 +641,35 @@ final class TradeGui {
      * @param batches 期望放入的批数；{@code <= 0} 或 {@link Integer#MAX_VALUE} 表示尽量全部放入
      */
     void autoFill(Trade trade, int batches) {
-        returnInputs();
+        if (!requirePermission(trade)) {
+            return;
+        }
+        boolean all = batches <= 0 || batches >= Integer.MAX_VALUE;
         for (int i = 0; i < trade.inputs.size(); i++) {
             ItemSpec spec = trade.inputs.get(i);
-            int need = batches >= Integer.MAX_VALUE || batches <= 0
-                    ? Integer.MAX_VALUE
-                    : spec.amount * batches;
-            ItemStack taken = takeFromPlayer(spec, need);
+            ItemStack current = inputs.itemAt(i);
+            if (current != null && !current.getType().isAir()
+                    && !spec.matches(current, plugin.soulSpace())) {
+                // 槽里是上一笔交易留下的不匹配物品：先退回玩家，再放本交易需要的物品。
+                giveOrDrop(player, current.clone());
+                setInput(i, null);
+                current = null;
+            }
+            if (current != null && !current.getType().isAir()) {
+                // 已放入的物品能复用就复用，只补差额，避免“退回 → 再取”在背包满时掉落。
+                int cap = Math.max(1, current.getMaxStackSize());
+                int missing = all ? cap - current.getAmount() : spec.amount * batches - current.getAmount();
+                missing = Math.min(missing, cap - current.getAmount());
+                if (missing > 0) {
+                    ItemStack more = takeFromPlayer(spec, missing);
+                    if (more != null) {
+                        current.setAmount(current.getAmount() + more.getAmount());
+                        setInput(i, current);
+                    }
+                }
+                continue;
+            }
+            ItemStack taken = takeFromPlayer(spec, all ? Integer.MAX_VALUE : spec.amount * batches);
             if (taken != null) {
                 setInput(i, taken);
             }
