@@ -123,7 +123,15 @@ final class TradeService {
                 String command = raw
                         .replace("%player%", player.getName())
                         .replace("%uuid%", player.getUniqueId().toString())
-                        .replace("%times%", String.valueOf(times));
+                        .replace("%times%", String.valueOf(times))
+                        .trim();
+                // 配置里写 /give 也能执行；Bukkit.dispatchCommand 不需要前导斜杠。
+                if (command.startsWith("/")) {
+                    command = command.substring(1).trim();
+                }
+                if (command.isEmpty()) {
+                    continue;
+                }
                 try {
                     if (!Bukkit.dispatchCommand(console, command)) {
                         failed++;

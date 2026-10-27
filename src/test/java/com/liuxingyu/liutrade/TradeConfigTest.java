@@ -49,6 +49,19 @@ class TradeConfigTest {
     }
 
     @Test
+    void guiModeIsTrimmedAndCaseInsensitive() {
+        YamlConfiguration cfg = new YamlConfiguration();
+        cfg.set("settings.gui-mode", "  Custom ");
+        TradeConfig config = new TradeConfig();
+        config.load(cfg);
+        assertEquals("custom", config.guiMode);
+
+        cfg.set("settings.gui-mode", "villager");
+        config.load(cfg);
+        assertEquals("villager", config.guiMode);
+    }
+
+    @Test
     void leftoverOnCloseOnlyAcceptsVoid() {
         YamlConfiguration cfg = new YamlConfiguration();
         cfg.set("settings.leftover-on-close", "void");

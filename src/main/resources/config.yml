@@ -9,7 +9,7 @@ config-version: 1
 settings:
   # 界面模式：
   #   villager = 原生村民交易界面（左侧交易列表 + 滚动 + 自动放入，客户端原生）
-  #   custom   = 自定义箱子界面（支持 pdc/name/not 规则匹配与分页）
+  #   custom   = 自定义箱子界面（支持 pdc/name/not 规则匹配、分页、交易配方与音效反馈）
   gui-mode: villager
   # 共享配置目录：留空 = 插件自身数据目录（plugins/LiuTrade）。
   # 多台服务器可指向同一目录（如 /mc/shared/liutrade-config）实现改一处全服生效。
@@ -22,7 +22,7 @@ settings:
   leftover-on-close: return
   # 完成一次交易是否发送聊天提示。
   feedback: true
-  # 单个界面最多显示的页数保护（每个商店交易很多时用）。
+  # 单个界面最多显示的页数保护（每个商店交易很多时用）；每页 12 笔。
   max-pages: 20
 
 messages:
@@ -33,8 +33,6 @@ messages:
   no-trades: '&7这个商店还没有配置交易。'
   trade-success: '&a交易成功：&f%name% &7x&f%times%'
   trade-fail: '&c物品不足，无法完成交易。'
-  output-full: '&e背包放不下产出，已尽量放入。'
-  limit-reached: '&c这笔交易已达上限（%limit% 次）。'
   soulspace-missing: '&c这笔交易需要 SoulSpace（未安装或未启用）。'
   trade-locked: '&c这笔交易需要权限：&f%permission%'
   recipe-none: '&c这笔交易没有可查看的配方。'

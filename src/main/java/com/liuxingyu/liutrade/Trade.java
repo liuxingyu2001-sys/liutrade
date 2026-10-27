@@ -47,6 +47,7 @@ final class Trade {
      * 指令产出图标显示的名字：条目上配置了 {@code display_name}/{@code label} 就用它，
      * 否则直接显示第一条原生指令（让玩家看到实际会执行什么）。
      */
+    /** 指令产出的图标名：显式 display_name 优先，否则用第一条指令原样（不替换占位符）。 */
     String commandName() {
         if (commandDisplayName != null && !commandDisplayName.isBlank()) {
             return commandDisplayName;

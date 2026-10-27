@@ -19,6 +19,14 @@ final class TradeConfig {
     volatile String guiMode = "villager";
 
     void load(FileConfiguration cfg) {
+        try {
+            read(cfg);
+        } catch (Throwable failure) {
+            org.bukkit.Bukkit.getLogger().warning("LiuTrade 配置读取异常，继续使用上一份配置：" + failure);
+        }
+    }
+
+    private void read(FileConfiguration cfg) {
         Map<String, String> next = new HashMap<>();
         sharedConfigPath = cfg.getString("settings.shared-config-path", "").trim();
         autoReload = cfg.getBoolean("settings.auto-reload", true);
@@ -52,10 +60,6 @@ final class TradeConfig {
             }
         }
         messages = Map.copyOf(next);
-    }
-
-    String msg(String key, String... replacements) {
-        return msg(messages, key, replacements);
     }
 
     private String msg(Map<String, String> snapshot, String key, String... replacements) {

@@ -143,5 +143,20 @@ class ItemSpecTest {
         ItemSpec wildcard = ItemSpec.parse(Map.of("material", "shulker_*"));
         assertFalse(wildcard.opaqueMaterial);
         assertEquals("SHULKER_*", wildcard.material);
+        assertFalse(wildcard.nativeRepresentable());
+    }
+
+    @Test
+    void nativeRepresentableRejectsExtraRulesOnExactSpecs() {
+        // 完整物品规格 + pdc 规则：原生界面无法同时按规则匹配
+        assertFalse(ItemSpec.parse(Map.of("library_id", "ce:ns:id", "pdc", "jiu:jiu")).nativeRepresentable());
+        assertFalse(ItemSpec.parse(Map.of(
+                "material", "PAPER",
+                "components", Map.of("custom_model_data", 1),
+                "pdc", "jiu:jiu")).nativeRepresentable());
+        // 只有组件、没有额外规则时仍可用原生界面
+        assertTrue(ItemSpec.parse(Map.of(
+                "material", "PAPER",
+                "components", Map.of("custom_model_data", 1))).nativeRepresentable());
     }
 }

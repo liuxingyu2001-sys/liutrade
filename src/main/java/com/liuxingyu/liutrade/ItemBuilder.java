@@ -84,9 +84,23 @@ final class ItemBuilder {
             return;
         }
         for (Map.Entry<String, Object> entry : components.entrySet()) {
-            applyOne(meta, normalize(entry.getKey()), entry.getValue());
+            String key = normalize(entry.getKey());
+            try {
+                applyOne(meta, key, entry.getValue());
+            } catch (Throwable t) {
+                // 单个组件值非法（例如 max_stack_size 越界）不应让整件物品/界面渲染失败。
+                if (WARNED_COMPONENTS.add("error:" + key)) {
+                    LOGGER.warning("应用物品组件失败：" + key + "（已忽略该组件）：" + t);
+                }
+            }
         }
-        item.setItemMeta(meta);
+        try {
+            item.setItemMeta(meta);
+        } catch (Throwable t) {
+            if (WARNED_COMPONENTS.add("error:meta")) {
+                LOGGER.warning("写回物品组件失败（已保留原始物品）：" + t);
+            }
+        }
     }
 
     @SuppressWarnings("deprecation")
@@ -98,7 +112,7 @@ final class ItemBuilder {
             case "custom_model_data" -> meta.setCustomModelData(intValue(value, 0));
             case "unbreakable" -> meta.setUnbreakable(bool(value));
             case "rarity" -> meta.setRarity(rarity(value));
-            case "max_stack_size" -> meta.setMaxStackSize(intValue(value, 64));
+            case "max_stack_size" -> meta.setMaxStackSize(Math.max(1, Math.min(99, intValue(value, 64))));
             case "fire_resistant" -> meta.setFireResistant(bool(value));
             case "hide_tooltip" -> meta.setHideTooltip(bool(value));
             case "enchantment_glint_override" -> meta.setEnchantmentGlintOverride(bool(value));
@@ -117,7 +131,7 @@ final class ItemBuilder {
 
     private static void applyDamage(ItemMeta meta, Object value) {
         if (meta instanceof org.bukkit.inventory.meta.Damageable damageable) {
-            damageable.setDamage(intValue(value, 0));
+            damageable.setDamage(Math.max(0, intValue(value, 0)));
         }
     }
 

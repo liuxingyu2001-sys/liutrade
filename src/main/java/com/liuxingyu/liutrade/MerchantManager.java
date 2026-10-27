@@ -99,8 +99,8 @@ final class MerchantManager {
         Merchant merchant = new Merchant(id);
         merchant.name = cfg.getString("name", id);
         merchant.title = cfg.getString("title", merchant.name);
-        merchant.npc = orEmpty(cfg.getString("npc", ""));
-        merchant.permission = orEmpty(cfg.getString("permission", ""));
+        merchant.npc = orEmpty(cfg.getString("npc", "")).trim();
+        merchant.permission = orEmpty(cfg.getString("permission", "")).trim();
         merchant.icon = spec(cfg.get("icon"));
         merchant.trades = Collections.unmodifiableList(trades);
         return merchant;
@@ -111,6 +111,7 @@ final class MerchantManager {
         List<ItemSpec> outputs = new ArrayList<>();
         List<String> commands = new ArrayList<>();
         String commandDisplayName = null;
+        boolean outputCommandConfig = false;
         for (Object raw : list(section.get("inputs"), section.get("input"))) {
             ItemSpec spec = spec(raw);
             if (spec != null) {
@@ -121,6 +122,7 @@ final class MerchantManager {
             Map<String, Object> map = ItemBuilder.asMap(raw);
             if (map != null && (map.containsKey("commands") || map.containsKey("command"))) {
                 // 产出条目可以是「指令产出」：commands: [...]（也可与物品字段共存）。
+                outputCommandConfig = true;
                 Object rawCommands = map.containsKey("commands") ? map.get("commands") : map.get("command");
                 commands.addAll(stringList(rawCommands));
                 Map<String, Object> itemMap = new LinkedHashMap<>(map);
@@ -152,6 +154,7 @@ final class MerchantManager {
         }
         // 也允许把 commands 写在交易层级
         commands.addAll(stringList(section.get("commands")));
+        commands.removeIf(command -> command == null || command.isBlank());
         if (inputs.isEmpty() || inputs.size() > Trade.MAX_INPUTS) {
             warn("交易 " + id + " 的 inputs 必须为 1~" + Trade.MAX_INPUTS + " 项，已跳过。");
             return null;
@@ -170,7 +173,11 @@ final class MerchantManager {
         }
         boolean hasItem = !outputs.isEmpty();
         boolean hasCommand = !commands.isEmpty();
-        boolean convert = booleanValue(section.get("convert"), !hasItem && !hasCommand);
+        // 只有在完全没有配置 outputs/commands 时才默认 convert；空列表/全是空指令属于配置错误，
+        // 不能悄悄退化成「按规则转换」。
+        boolean hasOutputConfig = section.isSet("outputs") || section.isSet("output");
+        boolean hasCommandConfig = section.isSet("commands") || outputCommandConfig;
+        boolean convert = booleanValue(section.get("convert"), !hasOutputConfig && !hasCommandConfig);
         if (convert && inputs.size() > 1) {
             warn("交易 " + id + " 使用 convert 时必须只有 1 个输入，已跳过。");
             return null;
@@ -201,7 +208,7 @@ final class MerchantManager {
         String nameText = name == null ? "" : String.valueOf(name).trim();
         trade.name = nameText.isEmpty() ? inputs.get(0).label() : String.valueOf(name);
         Object permission = section.get("permission");
-        trade.permission = permission != null ? String.valueOf(permission) : "";
+        trade.permission = permission != null ? String.valueOf(permission).trim() : "";
         return trade;
     }
 

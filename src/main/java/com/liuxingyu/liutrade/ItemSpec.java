@@ -225,7 +225,15 @@ final class ItemSpec {
                 || (material != null && (!components.isEmpty() || opaqueMaterial));
         if (exact) {
             ItemStack sample = sample(ss);
-            return sample != null && item.isSimilar(sample);
+            if (sample == null || !item.isSimilar(sample)) {
+                return false;
+            }
+            // 完整规格之外还写了 pdc/name 等规则字段时，必须同时满足规则；
+            // 只按样例匹配会让普通同款物品绕过额外规则。
+            if (requiresRules()) {
+                return ss != null && ss.canMatchRules() && ss.matchesRule(rule, item);
+            }
+            return true;
         }
         if (ss != null && ss.canMatchRules() && !rule.isEmpty()) {
             return ss.matchesRule(rule, item);
@@ -258,11 +266,20 @@ final class ItemSpec {
      * 只有 {@code pdc}/{@code name} 等无法采样的字段时，原生界面无法按规则匹配（需自定义界面）。
      */
     boolean nativeRepresentable() {
+        // 原生村民界面只能按物品样例匹配：额外规则（pdc/name/...）和通配材质都无法表示。
+        if (requiresRules() || wildcardMaterial()) {
+            return false;
+        }
         if (libraryId != null || bytes != null || !components.isEmpty()
                 || (material != null && opaqueMaterial)) {
             return true;
         }
         return rule.size() == 1 && rule.containsKey("material");
+    }
+
+    /** material 是否是 SoulSpace 通配写法（{@code SHULKER_*} / {@code *SWORD*}）。 */
+    boolean wildcardMaterial() {
+        return material != null && (material.indexOf('*') >= 0 || material.indexOf('?') >= 0);
     }
 
     /**

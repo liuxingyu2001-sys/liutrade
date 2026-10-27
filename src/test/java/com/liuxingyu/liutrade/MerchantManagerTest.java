@@ -208,6 +208,31 @@ class MerchantManagerTest {
     }
 
     @Test
+    void rejectsEmptyConfiguredOutputsInsteadOfFallingBackToConvert() throws Exception {
+        assertNull(parse("""
+                name: "店"
+                trades:
+                  空产出:
+                    inputs:
+                      - material: DIAMOND
+                    outputs: []
+                """));
+    }
+
+    @Test
+    void ignoresBlankCommandsInsteadOfCreatingCommandTrade() throws Exception {
+        assertNull(parse("""
+                name: "店"
+                trades:
+                  空指令:
+                    inputs:
+                      - material: DIAMOND
+                    commands:
+                      - "   "
+                """));
+    }
+
+    @Test
     void parsesCommandAndMixedOutputs() throws Exception {
         Merchant merchant = parse("""
                 name: "店"

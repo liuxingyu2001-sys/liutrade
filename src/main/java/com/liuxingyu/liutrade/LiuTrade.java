@@ -45,6 +45,8 @@ public final class LiuTrade extends JavaPlugin {
             } else {
                 getLogger().info("未检测到 SoulSpace：仅支持原版材质交易（library_id / 规则字段退化为材质匹配）。");
             }
+        } else {
+            getLogger().info("SoulSpace " + soulSpace.describe());
         }
         manager = new MerchantManager(this);
         service = new TradeService(this);
@@ -117,7 +119,12 @@ public final class LiuTrade extends JavaPlugin {
 
     /** 重载 config.yml + 全部商店（/liutrade reload 与自动检测用）。 */
     synchronized void reloadAll() {
-        reloadConfig();
+        try {
+            reloadConfig();
+        } catch (Throwable failure) {
+            // config.yml 语法写坏时保留内存里的旧配置，别让整个重载/轮询中断。
+            getLogger().warning("读取 config.yml 失败，继续使用上一份配置：" + failure);
+        }
         config.load(getConfig());
         syncReloadTimer();
         reloadMerchants();
@@ -158,15 +165,28 @@ public final class LiuTrade extends JavaPlugin {
     }
 
     private long fingerprint() {
-        long sum = 0;
+        // 用 64 位混合（而不是简单的 *31 累加）：共享目录里文件很多时不会因为顺序/组合别名
+        // 产生「指纹不变」的漏检，也不会因为累加溢出而误判为变化。
+        long hash = 0xcbf29ce484222325L;
         File configFile = new File(getDataFolder(), "config.yml");
         if (configFile.isFile()) {
-            sum = configFile.lastModified() * 131 + configFile.length();
+            hash = mix(hash, configFile);
         }
-        for (File file : yamlFiles(merchantsRoot())) {
-            sum = sum * 31 + file.lastModified() * 131 + file.length();
+        List<File> files = yamlFiles(merchantsRoot());
+        hash = mix(hash, files.size());
+        for (File file : files) {
+            hash = mix(hash, file);
         }
-        return sum;
+        return hash;
+    }
+
+    private static long mix(long hash, File file) {
+        return mix(mix(hash, file.getAbsolutePath().hashCode()), file.lastModified() * 31 + file.length());
+    }
+
+    private static long mix(long hash, long value) {
+        long next = (hash ^ value) * 0x100000001b3L;
+        return next ^ (next >>> 29);
     }
 
     private static List<File> yamlFiles(File dir) {
@@ -397,12 +417,20 @@ public final class LiuTrade extends JavaPlugin {
             return "?";
         }
         String configured = spec.configuredName();
-        if (configured != null) {
+        if (configured != null && !configured.isBlank()) {
             return Msg.plain(configured);
         }
-        ItemStack icon = spec.iconSample(soulSpace);
-        if (icon != null && !icon.getType().isAir()) {
-            return itemName(icon);
+        try {
+            ItemStack icon = spec.iconSample(soulSpace);
+            if (icon != null && !icon.getType().isAir()) {
+                String name = itemName(icon);
+                if (name != null && !name.isBlank()) {
+                    return name;
+                }
+            }
+        } catch (Throwable failure) {
+            // 物品库里查不到/第三方解析报错时退回配置里的原始写法，别让界面渲染整体失败。
+            getLogger().fine("物品显示名解析失败：" + spec.label() + " -> " + failure);
         }
         return spec.label();
     }

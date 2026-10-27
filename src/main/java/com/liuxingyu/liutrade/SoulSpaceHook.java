@@ -28,7 +28,6 @@ final class SoulSpaceHook {
     private Method mDisplayName;
     private Method mConversion;
     private Method mConvert;
-    private Method mHasRule;
 
     SoulSpaceHook(Plugin plugin) {
         this.plugin = plugin;
@@ -43,9 +42,24 @@ final class SoulSpaceHook {
         return api != null && mMatches != null;
     }
 
-    /** SoulSpace 是否提供统一展示名（2.5.1+）。 */
-    boolean canDisplayName() {
-        return api != null && mDisplayName != null;
+    /** SoulSpace 是否提供物品库解析（2.4.9+）。 */
+    boolean canResolve() {
+        return api != null && mResolve != null;
+    }
+
+    /** SoulSpace 是否提供转换规则（2.4.9+）。转换器实例化失败时为 false。 */
+    boolean canConvert() {
+        return api != null && mConvert != null && conversion() != null;
+    }
+
+    /** 连接状态一句话描述（启动日志用）。 */
+    String describe() {
+        if (api == null) {
+            return "未连接";
+        }
+        return "已连接（规则匹配：" + (canMatchRules() ? "可用" : "不可用")
+                + "，物品库：" + (canResolve() ? "可用" : "不可用")
+                + "，转换：" + (canConvert() ? "可用" : "不可用") + "）";
     }
 
     /** 连接 SoulSpace；成功返回 true。可重复调用。 */
@@ -65,10 +79,8 @@ final class SoulSpaceHook {
             Method conversion = apiClass.getMethod("conversion");
             Class<?> conversionClass = Class.forName("com.soulspace.api.ItemConversion");
             Method convert = conversionClass.getMethod("convert", UUID.class, ItemStack.class);
-            Method hasRule = conversionClass.getMethod("hasRule", ItemStack.class);
             this.mConversion = conversion;
             this.mConvert = convert;
-            this.mHasRule = hasRule;
             try {
                 this.conversion = conversion.invoke(provider);
             } catch (Throwable ignored) {
@@ -154,19 +166,6 @@ final class SoulSpaceHook {
         } catch (Throwable t) {
             conversion = null; // 句柄可能随 SoulSpace 重载失效，下次重新取
             return Optional.empty();
-        }
-    }
-
-    boolean hasConversion(ItemStack item) {
-        if (!available() || mHasRule == null || item == null) {
-            return false;
-        }
-        try {
-            Object handler = conversion();
-            return handler != null && Boolean.TRUE.equals(mHasRule.invoke(handler, item));
-        } catch (Throwable t) {
-            conversion = null;
-            return false;
         }
     }
 

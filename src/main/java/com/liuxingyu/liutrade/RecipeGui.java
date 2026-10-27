@@ -29,6 +29,9 @@ final class RecipeGui {
     private static final int[] OUTPUT_SLOTS = {25, 34, 43, 52};
     private static final int SLOT_ARROW = 24;
     private static final int SLOT_COMMAND = 16;
+    private static final int SLOT_INFO = 4;
+    private static final int SLOT_INPUT_LABEL = 9;
+    private static final int SLOT_OUTPUT_LABEL = 17;
     private static final int SLOT_BACK = 49;
 
     private final Player player;
@@ -51,11 +54,6 @@ final class RecipeGui {
                 .build(player);
     }
 
-    /** 构造一扇作为交易界面下一级的配方窗（ESC 由 Sparrow 会话原生返回）。 */
-    static RecipeGui child(LiuTrade plugin, Player player, Trade trade) {
-        return child(plugin, player, trade, null);
-    }
-
     /** 同上，但用输入槽里的实际物品预览 convert 产出。 */
     static RecipeGui child(LiuTrade plugin, Player player, Trade trade, ItemStack subject) {
         return new RecipeGui(plugin, player, trade, subject, null);
@@ -63,7 +61,7 @@ final class RecipeGui {
 
     /** 作为根窗打开（原生村民界面用），关闭后回调 {@code onEnd}。 */
     static void openRoot(LiuTrade plugin, Player player, Trade trade, Runnable onEnd) {
-        openRoot(plugin, player, trade, null, onEnd);
+        new RecipeGui(plugin, player, trade, null, onEnd).window.open();
     }
 
     /** 同上，但用输入槽里的实际物品预览 convert 产出。 */
@@ -78,6 +76,12 @@ final class RecipeGui {
     private NormalPane buildPane(LiuTrade plugin, Trade trade) {
         NormalPane pane = Pane.empty(9, 6);
         pane.setBackgroundItem(border());
+        decorate(pane);
+        pane.setElement(SLOT_INFO, Element.item(Item.simple(infoIcon(trade))));
+        pane.setElement(SLOT_INPUT_LABEL, Element.item(Item.simple(staticItem(Material.HOPPER, "&b输入",
+                List.of("&7左侧是这笔交易需要的物品")))));
+        pane.setElement(SLOT_OUTPUT_LABEL, Element.item(Item.simple(staticItem(Material.LIME_STAINED_GLASS_PANE, "&a输出",
+                List.of("&7右侧是交易成功后获得的物品/指令")))));
 
         // 输入
         int index = 0;
@@ -107,12 +111,78 @@ final class RecipeGui {
             pane.setElement(SLOT_COMMAND, Element.item(Item.simple(commandIcon(trade))));
         }
 
+        // 无指令产出时，指令格给出说明而不是留空
+        if (!trade.hasCommands()) {
+            pane.setElement(SLOT_COMMAND, Element.item(Item.simple(staticItem(Material.GRAY_STAINED_GLASS_PANE,
+                    "&8指令产出", List.of("&7这笔交易不执行指令")))));
+        }
+
         // 返回
         pane.setElement(SLOT_BACK, Element.item(Item.builder()
-                .setItemProviderConstant(staticItem(Material.BARRIER, "&c返回 &7(ESC)", List.of("&7回到交易界面")))
-                .addClickHandler(click -> click.window().backOrClose())
+                .setItemProviderConstant(staticItem(Material.ARROW, "&e返回 &7(ESC)",
+                        List.of("&7回到交易界面")))
+                .addClickHandler(click -> {
+                    playClick();
+                    click.window().backOrClose();
+                })
                 .build()));
         return pane;
+    }
+
+    /** 与交易界面一致的黑色外框与顶部色带。 */
+    private void decorate(NormalPane pane) {
+        for (int slot = 0; slot < 54; slot++) {
+            int row = slot / 9;
+            int col = slot % 9;
+            if (row == 0 || row == 5 || col == 0 || col == 8) {
+                pane.setElement(slot, Element.item(Item.simple(
+                        staticItem(Material.BLACK_STAINED_GLASS_PANE, " ", null))));
+            }
+        }
+        for (int slot : new int[]{2, 3, 5, 6}) {
+            pane.setElement(slot, Element.item(Item.simple(
+                    staticItem(Material.CYAN_STAINED_GLASS_PANE, " ", null))));
+        }
+    }
+
+    /** 顶部交易说明：名称、描述、权限与阅读方式。 */
+    private ItemStack infoIcon(Trade trade) {
+        ItemStack item = new ItemStack(Material.BOOK);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Msg.color("&e&l交易说明"));
+            List<String> lore = new ArrayList<>();
+            lore.add(Msg.color("&7名称：&f" + tradeName(trade)));
+            if (!trade.description.isEmpty()) {
+                lore.add(Msg.color("&8--------------------"));
+                for (String line : trade.description) {
+                    lore.add(Msg.color(line));
+                }
+            }
+            lore.add(Msg.color("&8--------------------"));
+            lore.add(Msg.color("&7输入：&f" + trade.inputs.size() + " &7种"));
+            if (trade.hasItemOutput() && trade.hasCommands()) {
+                lore.add(Msg.color("&7产出：&f物品 + 指令"));
+            } else if (trade.hasItemOutput()) {
+                lore.add(Msg.color("&7产出：&f物品"));
+            } else {
+                lore.add(Msg.color("&7产出：&f指令"));
+            }
+            if (!trade.permission.isBlank()) {
+                lore.add(Msg.color("&c需要权限：&f" + trade.permission));
+            }
+            lore.add("");
+            lore.add(Msg.color("&8左侧：需要放入的物品"));
+            lore.add(Msg.color("&8右侧：可以换到的产出"));
+            lore.add(Msg.color("&eESC &7返回交易界面"));
+            meta.setLore(lore);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private void playClick() {
+        player.playSound(player.getLocation(), "ui.button.click", 0.6f, 1.3f);
     }
 
     private ItemStack inputIcon(LiuTrade plugin, ItemSpec spec) {
@@ -125,9 +195,13 @@ final class RecipeGui {
         if (meta != null) {
             meta.setDisplayName(Msg.color("&f" + plugin.specName(spec)));
             List<String> lore = new ArrayList<>();
-            lore.add(Msg.color("&7需要 &f" + spec.amount + " &7个"));
+            lore.add("");
+            lore.add(Msg.color("&b需要 &f" + spec.amount + " &b个"));
             if (!spec.nativeRepresentable()) {
                 lore.add(Msg.color("&8（按规则匹配）"));
+            }
+            if (spec.requiresRules()) {
+                lore.add(Msg.color("&8需要 SoulSpace 规则匹配"));
             }
             meta.setLore(lore);
             icon.setItemMeta(meta);
@@ -142,7 +216,8 @@ final class RecipeGui {
             List<String> lore = meta.hasLore() && meta.getLore() != null
                     ? new ArrayList<>(meta.getLore())
                     : new ArrayList<>();
-            lore.add(Msg.color("&7产出 &f" + stack.getAmount() + " &7个"));
+            lore.add("");
+            lore.add(Msg.color("&a产出 &f" + stack.getAmount() + " &a个"));
             meta.setLore(lore);
             icon.setItemMeta(meta);
         }

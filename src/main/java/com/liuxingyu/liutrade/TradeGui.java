@@ -23,11 +23,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 自定义交易界面（Sparrow UI 箱子窗口，54 格），稀疏布局，玻璃板做边框与分隔：
+ * 自定义交易界面（Sparrow UI 箱子窗口，54 格），黑色外框 + 顶部色带 + 稀疏布局：
  * <pre>
- *   第 1 行：  · [上一页] · [关闭] · [怎么用] · [下一页] ·
+ *   第 1 行： [信息] · [上一页] · [怎么用] · [下一页] ·
  *   第 2~4 行：· [交易] · [交易] · [交易] · [交易] ·       （每页 12 笔，每笔之间玻璃板隔开）
- *   第 5~6 行：· [输入1] · [输入2] · … · [→] · [产出] ·   （输入数量按需显示，最多 6 个）
+ *   第 5 行：  [放入物品] [输入1] · [输入2] · … [→] [产出] ·
+ *   第 6 行：  · [输入3] · [输入4] …  [产出说明] · [关闭]
  * </pre>
  * 输入槽是真实的虚拟库存格：玩家把物品放进去，产出槽实时显示能换到什么，点产出槽完成交易。
  *
@@ -56,7 +57,6 @@ final class TradeGui {
     private final Player player;
     private final Merchant merchant;
     private final int[] slotToTradeIndex;
-    private final int[] slotToInputIndex;
     private final MutableSignal<Integer> page;
     /** 本商店需要的输入槽数（构造后不变，避免每次渲染重复遍历交易）。 */
     private final int activeInputs;
@@ -70,20 +70,19 @@ final class TradeGui {
     private final Map<Integer, ItemStack> iconCache = new HashMap<>();
     private final Map<Integer, List<ItemStack>> previewCache = new HashMap<>();
     private final Map<ItemSpec, String> specNameCache = new IdentityHashMap<>();
+    /** convert 预览缓存：同一交易 + 同一输入物品时只跑一次转换，避免一屏图标重复转换。 */
+    private int convertCacheTrade = -1;
+    private ItemStack convertCacheInput;
+    private List<ItemStack> convertCacheOutput = List.of();
 
     TradeGui(LiuTrade plugin, Player player, Merchant merchant, int page) {
         this.plugin = plugin;
         this.player = player;
         this.merchant = merchant;
         this.slotToTradeIndex = new int[54];
-        this.slotToInputIndex = new int[54];
         java.util.Arrays.fill(this.slotToTradeIndex, -1);
-        java.util.Arrays.fill(this.slotToInputIndex, -1);
         for (int i = 0; i < TRADE_SLOTS.length; i++) {
             this.slotToTradeIndex[TRADE_SLOTS[i]] = i;
-        }
-        for (int i = 0; i < INPUT_SLOTS.length; i++) {
-            this.slotToInputIndex[INPUT_SLOTS[i]] = i;
         }
         this.page = Signal.of(clampPage(page));
         this.activeInputs = computeInputCount();
@@ -103,8 +102,13 @@ final class TradeGui {
     private NormalWindow buildWindow() {
         NormalPane pane = Pane.empty(9, 6);
         pane.setBackgroundItem(filler());
+        decorate(pane);
+        pane.setElement(0, Element.item(infoItem()));
+        pane.setElement(36, Element.item(Item.simple(inputLabel())));
+        pane.setElement(51, Element.item(Item.simple(outputLabel())));
 
-        pane.setElement(SLOT_ARROW, Element.item(Item.simple(staticItem(Material.ARROW, "&7→ &f产出", null))));
+        pane.setElement(SLOT_ARROW, Element.item(Item.simple(staticItem(Material.ARROW, "&e→ &f交易",
+                List.of("&7输入满足后此处显示结果", "&7点击右侧产出格完成交易")))));
         pane.setElement(SLOT_HELP, Element.item(helpItem()));
         pane.setElement(SLOT_PREV, Element.item(pageButton(false)));
         pane.setElement(SLOT_NEXT, Element.item(pageButton(true)));
@@ -136,6 +140,97 @@ final class TradeGui {
                 .build(player);
         built.bind(page, win -> win.updateTitle());
         return built;
+    }
+
+    /** 黑色外框 + 顶部色带 + 输入区浅蓝色分隔，提升 54 格界面的层次感。 */
+    private void decorate(NormalPane pane) {
+        for (int slot = 0; slot < 54; slot++) {
+            int row = slot / 9;
+            int col = slot % 9;
+            if (row == 0 || row == 5 || col == 0 || col == 8) {
+                pane.setElement(slot, Element.item(Item.simple(
+                        staticItem(Material.BLACK_STAINED_GLASS_PANE, " ", null))));
+            }
+        }
+        for (int slot : new int[]{2, 3, 5, 6}) {
+            pane.setElement(slot, Element.item(Item.simple(
+                    staticItem(Material.CYAN_STAINED_GLASS_PANE, " ", null))));
+        }
+        for (int slot : new int[]{38, 40, 42, 44, 45, 47, 49}) {
+            pane.setElement(slot, Element.item(Item.simple(
+                    staticItem(Material.LIGHT_BLUE_STAINED_GLASS_PANE, " ", null))));
+        }
+    }
+
+    /** 左上角商店信息：图标、交易数、当前页、权限与快捷操作。 */
+    private Item infoItem() {
+        return Item.builder()
+                .setItemProvider(context -> infoIcon())
+                .dependsOn(page)
+                .build();
+    }
+
+    private ItemStack infoIcon() {
+        ItemStack icon = merchant.icon == null ? null : merchant.icon.iconSample(plugin.soulSpace());
+        if (icon == null || icon.getType().isAir()) {
+            icon = new ItemStack(Material.CHEST);
+        } else {
+            icon = icon.clone();
+        }
+        icon.setAmount(1);
+        ItemMeta meta = icon.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Msg.color("&6&l" + merchant.displayName()));
+            List<String> lore = new ArrayList<>();
+            lore.add(Msg.color("&8交易商店"));
+            lore.add(Msg.color("&7交易：&f" + merchant.trades.size() + " &7笔 · 每页 &f" + TRADE_SLOTS.length + " &7笔"));
+            lore.add(Msg.color("&7当前页：&f" + (page.get() + 1) + " / " + pageCount()));
+            lore.add(Msg.color("&7输入槽：&f" + activeInputs + " &7个"));
+            if (!merchant.permission.isBlank()) {
+                lore.add(Msg.color("&7需要权限：&f" + merchant.permission));
+            }
+            lore.add(Msg.color("&8--------------------"));
+            lore.add(Msg.color("&e左键交易 &7自动放入所需物品"));
+            lore.add(Msg.color("&e右键交易 &7查看交易配方"));
+            lore.add(Msg.color("&7也可以手动把物品放进下方输入槽"));
+            meta.setLore(lore);
+            icon.setItemMeta(meta);
+        }
+        return icon;
+    }
+
+    private ItemStack inputLabel() {
+        return staticItem(Material.HOPPER, "&b放入物品",
+                List.of("&7把交易需要的物品放进来", "&8左键交易可自动放入"));
+    }
+
+    private ItemStack outputLabel() {
+        return staticItem(Material.LIME_STAINED_GLASS_PANE, "&a产出",
+                List.of("&7满足条件后点击右边产出格", "&8右键可查看配方"));
+    }
+
+    private void playClick() {
+        playSound("ui.button.click", 1.3f);
+    }
+
+    private void playSuccess() {
+        playSound("entity.villager.yes", 1.2f);
+    }
+
+    private void playFail() {
+        playSound("entity.villager.no", 1.0f);
+    }
+
+    /** 界面音效；玩家已离线（会话收尾）时静默跳过。 */
+    private void playSound(String key, float pitch) {
+        if (!player.isOnline()) {
+            return;
+        }
+        try {
+            player.playSound(player.getLocation(), key, 0.6f, pitch);
+        } catch (Throwable ignored) {
+            // 音效资源名在不同版本可能缺失，不能因此中断点击逻辑。
+        }
     }
 
     /** 打开本界面（须在玩家所属线程调用）。 */
@@ -188,8 +283,12 @@ final class TradeGui {
                     }
                     Trade trade = merchant.trades.get(index);
                     if (click.clickType().isRightClick()) {
+                        playClick();
                         plugin.openRecipeFromGui(click.player(), this, trade);
                     } else {
+                        if (!locked(trade)) {
+                            playClick();
+                        }
                         autoFill(trade, 0);
                     }
                 })
@@ -206,13 +305,19 @@ final class TradeGui {
                         return;
                     }
                     if (click.clickType().isRightClick()) {
+                        playClick();
                         plugin.openRecipeFromGui(click.player(), this, trade);
                     } else {
                         if (!requirePermission(trade)) {
                             return;
                         }
-                        plugin.service().execute(click.player(), this, trade,
+                        boolean success = plugin.service().execute(click.player(), this, trade,
                                 click.clickType().isShiftClick() ? batches(trade) : 1);
+                        if (success) {
+                            playSuccess();
+                        } else {
+                            playFail();
+                        }
                     }
                 })
                 .build();
@@ -222,22 +327,25 @@ final class TradeGui {
         return Item.builder()
                 .setItemProvider(context -> {
                     boolean enabled = next ? page.get() < pageCount() - 1 : page.get() > 0;
+                    String label = next ? "下一页" : "上一页";
                     if (!enabled) {
-                        return filler();
+                        return staticItem(Material.GRAY_STAINED_GLASS_PANE, "&8" + label,
+                                List.of("&7已经是" + (next ? "最后一页" : "第一页")));
                     }
                     int target = next ? page.get() + 2 : page.get();
-                    return staticItem(Material.SPECTRAL_ARROW,
-                            next ? "&e下一页" : "&e上一页",
-                            List.of("&7第 " + target + " / " + pageCount() + " 页"));
+                    return staticItem(Material.SPECTRAL_ARROW, "&e" + label,
+                            List.of("&7第 " + target + " / " + pageCount() + " 页", "&e左键翻页"));
                 })
                 .dependsOn(page)
                 .addClickHandler(click -> {
                     if (next) {
                         if (page.get() < pageCount() - 1) {
+                            playClick();
                             selected = -1;
                             page.update(value -> value + 1);
                         }
                     } else if (page.get() > 0) {
+                        playClick();
                         selected = -1;
                         page.update(value -> value - 1);
                     }
@@ -247,8 +355,12 @@ final class TradeGui {
 
     private Item closeItem() {
         return Item.builder()
-                .setItemProviderConstant(staticItem(Material.BARRIER, "&c关闭", List.of("&7点击关闭界面")))
-                .addClickHandler(click -> click.window().close())
+                .setItemProviderConstant(staticItem(Material.BARRIER, "&c关闭",
+                        List.of("&7点击关闭界面", "&8或按 ESC")))
+                .addClickHandler(click -> {
+                    playClick();
+                    click.window().close();
+                })
                 .build();
     }
 
@@ -265,14 +377,22 @@ final class TradeGui {
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
             meta.setDisplayName(Msg.color("&e&l" + merchant.displayName() + " &7· 怎么用"));
-            meta.setLore(List.of(
-                    Msg.color("&8第 " + (page.get() + 1) + " / " + pageCount() + " 页 · 共 " + merchant.trades.size() + " 种交易"),
-                    Msg.color("&7① &f左键 &7任意交易：自动放入所需物品"),
-                    Msg.color("&7② 也可以自己把物品放进下面的输入槽"),
-                    Msg.color("&7③ &f产出格 &7出现物品后，&f左键 &7即可交易"),
-                    Msg.color("&7④ &fShift+左键 &7产出格：一次交易全部"),
-                    Msg.color("&7⑤ &f右键 &7交易/产出：查看交易配方"),
-                    Msg.color("&7⑥ 左右 &f箭头 &7翻页")));
+            List<String> lore = new ArrayList<>();
+            lore.add(Msg.color("&8第 " + (page.get() + 1) + " / " + pageCount() + " 页 · 共 " + merchant.trades.size() + " 种交易"));
+            if (!merchant.permission.isBlank()) {
+                lore.add(Msg.color("&7需要权限：&f" + merchant.permission));
+            }
+            lore.add(Msg.color("&8--------------------"));
+            lore.add(Msg.color("&7① &f左键 &7任意交易：自动放入所需物品"));
+            lore.add(Msg.color("&7② 也可以自己把物品放进下面的输入槽"));
+            lore.add(Msg.color("&7③ &f产出格 &7出现物品后，&f左键 &7即可交易"));
+            lore.add(Msg.color("&7④ &fShift+左键 &7交易/产出：尽量一次全部"));
+            lore.add(Msg.color("&7⑤ &f右键 &7交易/产出：查看交易配方"));
+            lore.add(Msg.color("&7⑥ 左右 &f箭头 &7翻页，&fESC &7关闭"));
+            if (merchant.trades.size() > pageCount() * TRADE_SLOTS.length) {
+                lore.add(Msg.color("&8提示：超出 max-pages 的交易未显示"));
+            }
+            meta.setLore(lore);
             item.setItemMeta(meta);
         }
         return item;
@@ -286,13 +406,15 @@ final class TradeGui {
             if (empty) {
                 return staticItem(Material.GRAY_STAINED_GLASS_PANE, "&7产出",
                         List.of(Msg.color("&7把物品放进左边的输入槽"),
-                                Msg.color("&7或左键上方交易自动放入")));
+                                Msg.color("&7或左键上方任意交易自动放入")));
             }
             Trade lockedTrade = lockedMatch();
             if (lockedTrade != null) {
                 return staticItem(Material.BARRIER, "&c需要权限",
                         List.of(Msg.color("&7这些物品可以交易，但缺少权限："),
-                                Msg.color("&f" + lockedTrade.permission)));
+                                Msg.color("&f" + lockedTrade.permission),
+                                "",
+                                Msg.color("&8右键交易可查看配方")));
             }
             Trade closest = closestTrade();
             if (closest != null) {
@@ -305,7 +427,7 @@ final class TradeGui {
                         lore.add(Msg.color("  &8· &f" + specName(spec) + " &7还差 &f" + (spec.amount - have)));
                     }
                 }
-                lore.add("");
+                lore.add(Msg.color("&8--------------------"));
                 lore.add(Msg.color("&e左键这笔交易 &7：自动补足"));
                 return staticItem(Material.BARRIER, "&c还差一点", lore);
             }
@@ -322,20 +444,29 @@ final class TradeGui {
             if (commands && !trade.hasItemOutput()) {
                 return commandOutputIcon(trade, batches);
             }
-            return staticItem(Material.BARRIER, "&c无法完成交易",
-                    List.of(Msg.color("&7物品数量不足，或转换规则未命中")));
+            List<String> lore = new ArrayList<>();
+            lore.add(Msg.color(missingConvertSupport(trade)
+                    ? "&c需要 SoulSpace 的转换规则（未安装或规则未配置）"
+                    : trade.convert ? "&7转换规则没有命中当前物品" : "&c产出配置无法解析，请联系管理员"));
+            lore.add(Msg.color("&8右键可查看配方"));
+            return staticItem(Material.BARRIER, "&c无法完成交易", lore);
         }
         ItemStack result = previews.get(0).clone();
         ItemMeta meta = result.getItemMeta();
         if (meta != null) {
             List<String> lore = new ArrayList<>();
+            lore.add(Msg.color("&a✔ 可以交易 &7（可交易 &f" + batches + " &7次）"));
+            lore.add(Msg.color("&8--------------------"));
             lore.add(Msg.color("&7需要："));
             for (ItemSpec input : trade.inputs) {
                 lore.add(Msg.color("  &8· &f" + specName(input) + " &7x" + input.amount));
             }
+            lore.add(Msg.color("&8--------------------"));
+            lore.add(Msg.color("&7获得："));
+            lore.add(Msg.color("  &8· &f" + plugin.itemName(result) + " &7x" + result.getAmount()));
             for (int i = 1; i < previews.size(); i++) {
                 ItemStack extra = previews.get(i);
-                lore.add(Msg.color("&7额外产出 &f" + plugin.itemName(extra) + " &7x" + extra.getAmount()));
+                lore.add(Msg.color("  &8· &f" + plugin.itemName(extra) + " &7x" + extra.getAmount()));
             }
             if (commands) {
                 lore.add(Msg.color("&7并执行指令："));
@@ -346,6 +477,7 @@ final class TradeGui {
             lore.add("");
             lore.add(Msg.color("&a左键 &7：交易 1 次"));
             lore.add(Msg.color("&aShift+左键 &7：全部 &f" + batches + " &7次"));
+            lore.add(Msg.color("&8右键 &7查看配方"));
             meta.setLore(lore);
             result.setItemMeta(meta);
         }
@@ -355,10 +487,13 @@ final class TradeGui {
     /** 纯指令产出（无物品）时的产出格；名字优先用条目上的 display_name，否则显示原生指令。 */
     private ItemStack commandOutputIcon(Trade trade, int batches) {
         List<String> lore = new ArrayList<>();
+        lore.add(Msg.color("&a✔ 可以交易 &7（可交易 &f" + batches + " &7次）"));
+        lore.add(Msg.color("&8--------------------"));
         lore.add(Msg.color("&7需要："));
         for (ItemSpec input : trade.inputs) {
             lore.add(Msg.color("  &8· &f" + specName(input) + " &7x" + input.amount));
         }
+        lore.add(Msg.color("&8--------------------"));
         lore.add(Msg.color("&7获得："));
         if (trade.commandDisplayName != null) {
             // 配置了显示名就以它为准，不再把原生指令摆给玩家看。
@@ -371,6 +506,7 @@ final class TradeGui {
         lore.add("");
         lore.add(Msg.color("&a左键 &7：交易 1 次"));
         lore.add(Msg.color("&aShift+左键 &7：全部 &f" + batches + " &7次"));
+        lore.add(Msg.color("&8右键 &7查看配方"));
         return staticItem(Material.COMMAND_BLOCK, trade.commandName(), lore);
     }
 
@@ -391,10 +527,37 @@ final class TradeGui {
         if (meta == null) {
             return icon;
         }
-        meta.setDisplayName(Msg.color("&f" + (trade.displayName != null ? trade.displayName : trade.name)));
+        boolean isLocked = locked(trade);
+        int batches = batches(trade);
+        // 有输入还不够：物品产出必须真的解析成功；纯指令交易则必须至少有一条有效指令。
+        // 列表里每笔都会渲染，SoulSpace 能力检查放前面，避免对必然失败的交易反复跑转换。
+        boolean needsRules = missingRuleSupport(trade);
+        boolean needsConvert = missingConvertSupport(trade);
+        List<ItemStack> previews = needsRules || needsConvert ? List.of() : previews(trade);
+        boolean hasOutput = trade.hasItemOutput() ? !previews.isEmpty() : trade.hasCommands();
+        boolean ready = batches > 0 && hasOutput && !needsRules && !needsConvert;
+        String nameColor = index == selected ? "&e" : isLocked ? "&c" : "&f";
+        meta.setDisplayName(Msg.color(nameColor + (trade.displayName != null ? trade.displayName : trade.name)));
         List<String> lore = new ArrayList<>();
+        lore.add(Msg.color(isLocked
+                ? "&c✖ 缺少权限"
+                : ready ? "&a✔ 现在可交易 &7(" + batches + " 次)"
+                : batches <= 0 ? "&7○ 材料不足" : "&c✖ 产出不可用"));
+        StringBuilder kind = new StringBuilder("&8产出：");
+        if (trade.hasItemOutput()) {
+            kind.append(trade.convert ? "物品 &7(转换规则)" : "物品");
+        }
+        if (trade.hasCommands()) {
+            kind.append(trade.hasItemOutput() ? " &8+ &7指令" : "指令");
+        }
+        lore.add(Msg.color(kind.toString()));
+        lore.add(Msg.color("&8--------------------"));
         for (String line : trade.description) {
             lore.add(Msg.color(line));
+        }
+        // 有自定义说明时额外标一行指令产出，让玩家点开前就知道还会触发什么。
+        if (trade.hasCommands() && !trade.description.isEmpty()) {
+            lore.add(Msg.color("&8额外执行指令：" + trade.commandName()));
         }
         if (!trade.description.isEmpty()) {
             lore.add("");
@@ -404,7 +567,6 @@ final class TradeGui {
             lore.add(Msg.color("  &8· &f" + specName(input) + " &7x" + input.amount));
         }
         lore.add(Msg.color("&7获得："));
-        List<ItemStack> previews = previews(trade);
         if (previews.isEmpty()) {
             if (!trade.hasCommands()) {
                 lore.add(Msg.color("  &8· &c" + (trade.convert ? "转换规则未命中" : "无法解析")));
@@ -425,15 +587,22 @@ final class TradeGui {
                 }
             }
         }
-        int batches = batches(trade);
         lore.add("");
-        if (locked(trade)) {
+        if (isLocked) {
             lore.add(Msg.color("&c需要权限：&f" + trade.permission));
             lore.add(Msg.color("&8解锁后才能交易"));
+        } else if (ready) {
+            lore.add(Msg.color("&e左键 &7自动放入可用物品"));
+        } else if (needsRules) {
+            lore.add(Msg.color("&c需要 SoulSpace 的规则匹配（未安装或版本过低）"));
+        } else if (needsConvert) {
+            lore.add(Msg.color("&c需要 SoulSpace 的转换规则（未安装或规则未配置）"));
+        } else if (batches <= 0) {
+            lore.add(Msg.color("&7放入所需物品后可交易"));
         } else {
-            lore.add(Msg.color(batches > 0 ? "&7你当前可交易 &a" + batches + " &7次" : "&c物品不足"));
-            lore.add(Msg.color("&e左键：自动放入所有可用物品"));
+            lore.add(Msg.color("&c产出配置不可用，请联系管理员"));
         }
+        lore.add(Msg.color("&e右键 &7查看交易配方"));
         if (first != null && !first.nativeRepresentable()) {
             lore.add(Msg.color("&8（按规则匹配）"));
         }
@@ -487,19 +656,37 @@ final class TradeGui {
             ItemStack input = inputAt(0);
             ItemSpec first = trade.inputs.isEmpty() ? null : trade.inputs.get(0);
             if (input != null && first != null && !input.getType().isAir()
-                    && input.getAmount() >= first.amount) {
-                List<ItemStack> actual = plugin.service().produceAll(player, trade, input);
-                if (!actual.isEmpty()) {
-                    return actual;
+                    && input.getAmount() >= first.amount
+                    && first.matches(input, plugin.soulSpace())) {
+                int index = merchant.trades.indexOf(trade);
+                if (index >= 0 && index == convertCacheTrade && sameStack(convertCacheInput, input)) {
+                    return convertCacheOutput;
                 }
+                // 输入槽里的实际物品已经匹配：转换失败就应当显示失败，不能退回样品预览
+                // 让玩家误以为可以交易。
+                List<ItemStack> actual = List.copyOf(plugin.service().produceAll(player, trade, input));
+                convertCacheTrade = index;
+                convertCacheInput = input.clone();
+                convertCacheOutput = actual;
+                return actual;
             }
-            return plugin.service().previewAll(player, trade);
+            int index = merchant.trades.indexOf(trade);
+            if (index < 0) {
+                return plugin.service().previewAll(player, trade);
+            }
+            return previewCache.computeIfAbsent(index, key -> plugin.service().previewAll(player, trade));
         }
         int index = merchant.trades.indexOf(trade);
         if (index < 0) {
             return plugin.service().previewAll(player, trade);
         }
         return previewCache.computeIfAbsent(index, key -> plugin.service().previewAll(player, trade));
+    }
+
+    private static boolean sameStack(ItemStack first, ItemStack second) {
+        return first != null && second != null
+                && first.getAmount() == second.getAmount()
+                && first.isSimilar(second);
     }
 
     /** 物品规格显示名（缓存，避免重复解析 CE 物品）。 */
@@ -512,6 +699,9 @@ final class TradeGui {
             return cached;
         }
         String name = plugin.specName(spec);
+        if (name == null || name.isBlank()) {
+            name = "未知物品";
+        }
         specNameCache.put(spec, name);
         return name;
     }
@@ -602,6 +792,7 @@ final class TradeGui {
         if (!locked(trade)) {
             return true;
         }
+        playFail();
         player.sendMessage(plugin.prefixed("trade-locked", "%permission%", trade.permission));
         return false;
     }
@@ -620,6 +811,32 @@ final class TradeGui {
         return batches == Integer.MAX_VALUE ? 0 : batches;
     }
 
+    /**
+     * 当前交易是否需要（且没有）SoulSpace 规则匹配：显示界面上会提示管理员去装 SoulSpace，
+     * 否则玩家只会看到「材料不足」，很容易被误当成配置错误。
+     */
+    private boolean missingRuleSupport(Trade trade) {
+        SoulSpaceHook ss = plugin.soulSpace();
+        if (ss != null && ss.canMatchRules()) {
+            return false;
+        }
+        for (ItemSpec input : trade.inputs) {
+            if (input.requiresRules()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 交易需要 SoulSpace 转换规则，但转换能力不可用（未安装 / 版本过低 / 规则加载失败）。 */
+    private boolean missingConvertSupport(Trade trade) {
+        if (!trade.convert) {
+            return false;
+        }
+        SoulSpaceHook ss = plugin.soulSpace();
+        return ss == null || !ss.canConvert();
+    }
+
     private boolean inputsEmpty() {
         for (int i = 0; i < inputCount(); i++) {
             ItemStack item = inputs.itemAt(i);
@@ -628,11 +845,6 @@ final class TradeGui {
             }
         }
         return true;
-    }
-
-    /** 左键交易时自动放入物品。 */
-    void autoFill(Trade trade) {
-        autoFill(trade, 1);
     }
 
     /**
@@ -661,10 +873,15 @@ final class TradeGui {
                 int missing = all ? cap - current.getAmount() : spec.amount * batches - current.getAmount();
                 missing = Math.min(missing, cap - current.getAmount());
                 if (missing > 0) {
-                    ItemStack more = takeFromPlayer(spec, missing);
+                    // 规则匹配可能匹配到不同 PDC/名字的同材质物品；只合并与当前槽完全相同的物品。
+                    ItemStack more = takeFromPlayer(spec, missing, current);
                     if (more != null) {
-                        current.setAmount(current.getAmount() + more.getAmount());
-                        setInput(i, current);
+                        if (current.isSimilar(more)) {
+                            current.setAmount(current.getAmount() + more.getAmount());
+                            setInput(i, current);
+                        } else {
+                            giveOrDrop(player, more);
+                        }
                     }
                 }
                 continue;
@@ -678,10 +895,24 @@ final class TradeGui {
     }
 
     private ItemStack takeFromPlayer(ItemSpec spec, int need) {
+        return takeFromPlayer(spec, need, null);
+    }
+
+    /**
+     * 从玩家背包取物品；{@code like} 非空时只取与它完全相同的物品，
+     * 避免规则匹配（如任意票券）把不同 PDC/名字的物品合并进同一个输入槽。
+     */
+    private ItemStack takeFromPlayer(ItemSpec spec, int need, ItemStack like) {
         ItemStack result = null;
         for (int i = 0; i < playerInv.size() && need > 0; i++) {
             ItemStack item = playerInv.itemAt(i);
             if (item == null || item.getType().isAir() || !spec.matches(item, plugin.soulSpace())) {
+                continue;
+            }
+            if (like != null && !like.isSimilar(item)) {
+                continue;
+            }
+            if (result != null && !result.isSimilar(item)) {
                 continue;
             }
             if (result == null) {
@@ -726,8 +957,13 @@ final class TradeGui {
         for (int i = 0; i < INPUT_SLOTS.length; i++) {
             ItemStack item = inputs.itemAt(i);
             if (item != null && !item.getType().isAir()) {
-                giveOrDrop(player, item.clone());
-                inputs.setItem(i, null);
+                try {
+                    giveOrDrop(player, item.clone());
+                    inputs.setItem(i, null);
+                } catch (Throwable failure) {
+                    // 单个槽位退回失败不应阻断其余槽位（尤其是停服/退出兜底时）。
+                    plugin.getLogger().warning("退回输入槽物品失败：" + failure);
+                }
             }
         }
     }
@@ -758,16 +994,8 @@ final class TradeGui {
 
     // ---------------- 槽位换算 ----------------
 
-    Merchant merchant() {
-        return merchant;
-    }
-
     Player player() {
         return player;
-    }
-
-    int page() {
-        return page.get();
     }
 
     int pageCount() {
@@ -792,25 +1020,6 @@ final class TradeGui {
         return Math.min(max, INPUT_SLOTS.length);
     }
 
-    static int inputSlot(int index) {
-        return INPUT_SLOTS[Math.max(0, Math.min(index, INPUT_SLOTS.length - 1))];
-    }
-
-    static int inputIndex(int slot) {
-        for (int i = 0; i < INPUT_SLOTS.length; i++) {
-            if (INPUT_SLOTS[i] == slot) {
-                return i;
-            }
-        }
-        return -1;
-    }
-
-    /** 当前显示出来的输入槽（超出本商店需要的不算）。 */
-    boolean isActiveInput(int slot) {
-        int index = slot >= 0 && slot < slotToInputIndex.length ? slotToInputIndex[slot] : -1;
-        return index >= 0 && index < inputCount();
-    }
-
     /** 交易列表槽位对应的全局交易下标，非交易槽返回 -1。 */
     int tradeIndexAt(int windowSlot) {
         if (windowSlot < 0 || windowSlot >= slotToTradeIndex.length) {
@@ -824,12 +1033,4 @@ final class TradeGui {
         return index >= 0 && index < merchant.trades.size() ? index : -1;
     }
 
-    static boolean isTradeSlot(int slot) {
-        for (int candidate : TRADE_SLOTS) {
-            if (candidate == slot) {
-                return true;
-            }
-        }
-        return false;
-    }
 }
