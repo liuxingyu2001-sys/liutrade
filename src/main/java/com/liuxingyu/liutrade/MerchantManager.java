@@ -77,11 +77,18 @@ final class MerchantManager {
     Merchant parse(YamlConfiguration cfg, String id) {
         ConfigurationSection tradeSection = cfg.getConfigurationSection("trades");
         List<Trade> trades = new ArrayList<>();
+        int disabled = 0;
         if (tradeSection != null) {
             int index = 0;
             for (String key : tradeSection.getKeys(false)) {
                 if (!(tradeSection.get(key) instanceof ConfigurationSection section)) {
                     warn("交易 " + id + "#" + key + " 格式不对（应为一个映射），已跳过。");
+                    index++;
+                    continue;
+                }
+                if (!tradeEnabled(section)) {
+                    // 单独关闭这一笔：不加载、不显示、不可交易；配置保留，改回 true 即可恢复。
+                    disabled++;
                     index++;
                     continue;
                 }
@@ -91,6 +98,9 @@ final class MerchantManager {
                 }
                 index++;
             }
+        }
+        if (disabled > 0) {
+            info("商店 " + id + " 有 " + disabled + " 笔交易通过 enable: false 关闭，已跳过。");
         }
         if (trades.isEmpty()) {
             warn("商店 " + id + " 没有任何有效交易，已跳过。");
@@ -263,6 +273,12 @@ final class MerchantManager {
         }
     }
 
+    private void info(String message) {
+        if (plugin != null) {
+            plugin.getLogger().info(message);
+        }
+    }
+
     private static List<Object> list(Object first, Object second) {
         List<Object> out = new ArrayList<>();
         addAll(out, first);
@@ -286,6 +302,31 @@ final class MerchantManager {
             return Boolean.parseBoolean(s);
         }
         return fallback;
+    }
+
+    /** 单笔交易是否启用：{@code enable}/{@code enabled} 写 false 即关闭；未写或无法识别按启用处理。 */
+    private static boolean tradeEnabled(ConfigurationSection section) {
+        for (String key : new String[]{"enable", "enabled"}) {
+            if (!section.isSet(key)) {
+                continue;
+            }
+            Object raw = section.get(key);
+            if (raw instanceof Boolean b) {
+                return b;
+            }
+            if (raw instanceof String s) {
+                String text = s.trim();
+                if (text.equalsIgnoreCase("true")) {
+                    return true;
+                }
+                if (text.equalsIgnoreCase("false")) {
+                    return false;
+                }
+            }
+            // 写成别的东西（空值/数字/错别字）时保持启用，避免手误把交易关掉。
+            return true;
+        }
+        return true;
     }
 
     private static void collect(File dir, List<File> out) {

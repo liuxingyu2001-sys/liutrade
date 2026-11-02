@@ -233,6 +233,98 @@ class MerchantManagerTest {
     }
 
     @Test
+    void skipsTradesDisabledByEnable() throws Exception {
+        Merchant merchant = parse("""
+                name: "帽子店"
+                trades:
+                  foodhats:fried_egg_hat:
+                    enable: false
+                    name: "煎蛋帽"
+                    inputs:
+                      - material: EGG
+                        amount: 16
+                      - material: LEATHER_HELMET
+                        not_pdc: "craftengine:id"
+                      - library_id: ce:jiu:jiu
+                    outputs:
+                      library_id: ce:foodhats:fried_egg_hat
+                  正常交易:
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                """);
+        assertNotNull(merchant);
+        // 关闭的交易不加载：界面不显示、give 也找不到，并且不占序号。
+        assertEquals(1, merchant.trades.size());
+        assertEquals("正常交易", merchant.trades.get(0).key);
+        assertNull(merchant.findTrade("foodhats:fried_egg_hat"));
+        assertEquals("正常交易", merchant.findTrade("1").key);
+    }
+
+    @Test
+    void acceptsEnabledAliasAndStringBoolean() throws Exception {
+        Merchant merchant = parse("""
+                name: "店"
+                trades:
+                  布尔关闭:
+                    enable: false
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                  字符串关闭:
+                    enable: "false"
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                  别名关闭:
+                    enabled: false
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                  字符串开启:
+                    enable: "true"
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                  默认开启:
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                  无法识别:
+                    enable: "abc"
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                """);
+        assertNotNull(merchant);
+        assertEquals(3, merchant.trades.size());
+        assertEquals("字符串开启", merchant.trades.get(0).key);
+        assertEquals("默认开启", merchant.trades.get(1).key);
+        assertEquals("无法识别", merchant.trades.get(2).key);
+    }
+
+    @Test
+    void skipsMerchantWhenAllTradesDisabled() throws Exception {
+        assertNull(parse("""
+                name: "店"
+                trades:
+                  关闭:
+                    enable: false
+                    inputs:
+                      - material: COAL
+                    outputs:
+                      - material: TORCH
+                """));
+    }
+
+    @Test
     void parsesCommandAndMixedOutputs() throws Exception {
         Merchant merchant = parse("""
                 name: "店"

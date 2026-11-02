@@ -37,6 +37,8 @@
 #   · convert: true  —— 产出由 SoulSpace 的 convert/ 转换规则决定（仅限单输入）
 #   · outputs       —— 显式列出产出；条目也支持 commands:（指令产出，控制台身份执行，
 #                      占位符 %player% / %uuid% / %times%）。纯指令产出仅自定义界面可用。
+#   · enable: false  —— 单独关闭这笔交易（不加载、不显示、不可交易；默认 true，也接受 enabled）。
+#                      关闭的交易不占序号，改回 true 后重载即可恢复。
 name: "&6铁匠"
 title: "&8&l铁匠的交易"
 npc: ""            # Citizens NPC 的 id（数字）或名字；留空则只能用 /liutrade open 打开
@@ -131,3 +133,10 @@ trades:
       - material: GOLD_INGOT
         commands:
           - "say %player% 完成了一笔交易"
+  临时关闭:
+    name: "&8临时关闭的交易"
+    enable: false              # 关掉这笔：界面不显示、也交易不了；改成 true 重载即恢复
+    inputs:
+      - material: DIAMOND
+    outputs:
+      - material: EMERALD
